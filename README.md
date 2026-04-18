@@ -64,6 +64,10 @@ Then:
 - Chat UI: http://localhost:8000/
 - Admin dashboard: http://localhost:8000/admin (default creds: `admin` / `change-me-locally` — please change in `.env`)
 
+If port 8000 is already in use on your machine, set `HOST_PORT=8001` (or any
+free port) in your `.env`. The container always binds 8000 internally; only
+the host-side port is remapped.
+
 ## Local development without Docker
 
 ```bash
