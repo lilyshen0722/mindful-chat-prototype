@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mindful Chat — Research Prototype</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="chat-body">
+  <header class="banner banner--warning" role="alert">
+    <strong>Research prototype.</strong> Not a crisis service. If you are in
+    crisis, call or text <strong>988</strong> (US) or visit
+    <a href="https://www.iasp.info/resources/Crisis_Centres/" target="_blank" rel="noopener">iasp.info</a>.
+  </header>
+
+  <main class="chat">
+    <h1>Mindful Chat</h1>
+    <p class="muted small">
+      An academic prototype that demonstrates a crisis-language guardrail
+      around a chatbot. Conversations are logged locally for research review.
+    </p>
+
+    <div id="messages" class="messages" aria-live="polite"></div>
+
+    <form id="chat-form" class="composer">
+      <textarea id="input" name="message" placeholder="Type a message…" rows="2" required></textarea>
+      <button type="submit" id="send">Send</button>
+    </form>
+
+    <p class="muted small">
+      <a href="/admin">Admin dashboard</a>
+    </p>
+  </main>
+
+  <script>
+    const conversationId = (() => {
+      const k = "mindful-chat-cid";
+      let v = localStorage.getItem(k);
+      if (!v) {
+        v = crypto.randomUUID();
+        localStorage.setItem(k, v);
+      }
+      return v;
+    })();
+
+    const messagesEl = document.getElementById("messages");
+    const formEl = document.getElementById("chat-form");
+    const inputEl = document.getElementById("input");
+    const sendBtn = document.getElementById("send");
+
+    function escapeHtml(s) {
+      return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function renderText(s) {
+      // Minimal markdown: **bold**, line breaks, autolink http(s) URLs.
+      let html = escapeHtml(s);
+      html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      html = html.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+      html = html.replace(/\n/g, "<br />");
+      return html;
+    }
+
+    function appendMessage(role, text, meta) {
+      const wrap = document.createElement("div");
+      wrap.className = `msg msg--${role}`;
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.innerHTML = renderText(text);
+      wrap.appendChild(bubble);
+      if (meta) {
+        const m = document.createElement("div");
+        m.className = "meta";
+        m.textContent = meta;
+        wrap.appendChild(m);
+      }
+      messagesEl.appendChild(wrap);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    formEl.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = inputEl.value.trim();
+      if (!text) return;
+      appendMessage("user", text);
+      inputEl.value = "";
+      sendBtn.disabled = true;
+      sendBtn.textContent = "…";
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation_id: conversationId, message: text }),
+        });
+        if (!res.ok) {
+          appendMessage("system", `Request failed: ${res.status}`);
+          return;
+        }
+        const data = await res.json();
+        const meta = data.escalated ? `risk: ${data.risk_level} · escalated to admin` : "";
+        appendMessage("assistant", data.reply, meta);
+      } catch (err) {
+        appendMessage("system", `Error: ${err}`);
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = "Send";
+        inputEl.focus();
+      }
+    });
+
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        formEl.requestSubmit();
+      }
+    });
+  </script>
+</body>
+</html>

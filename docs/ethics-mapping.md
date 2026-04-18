@@ -1,0 +1,94 @@
+# Ethics framework mapping
+
+This file documents how the prototype maps onto the **NIST AI Risk
+Management Framework (AI RMF 1.0, 2023)** and onto the course's recurring
+Belmont / human-in-the-loop themes. It also documents the prototype's known
+limitations, because honesty about failure modes is itself a required
+deliverable of the framework.
+
+## NIST AI RMF — function-by-function mapping
+
+### Govern
+
+| AI RMF expectation                                    | How this repo addresses it                                                   |
+|-------------------------------------------------------|------------------------------------------------------------------------------|
+| Document AI system policies and accountability        | `README.md` (intent + scope), `docs/written-component.md` (audience + impact) |
+| Manage AI risks throughout the lifecycle              | This file plus tests in `tests/test_guardrail.py` for the detector           |
+| Address AI risks of third-party data, models, software | OpenRouter is documented in `docs/architecture.md`; model is configurable    |
+| Maintain a culture that prioritizes safety            | UI banner + LLM system prompt + crisis-line template all reinforce safety    |
+
+### Map
+
+| AI RMF expectation                                    | How this repo addresses it                                                   |
+|-------------------------------------------------------|------------------------------------------------------------------------------|
+| Establish and understand the context                  | "What this is and is not" section of `README.md`                             |
+| Categorize the AI system                              | Documented as a high-stakes-domain *prototype*, not a deployable service     |
+| Identify potential risks and impacts                  | "Limitations" sections in this file and in `written-component.md`            |
+
+### Measure
+
+| AI RMF expectation                                    | How this repo addresses it                                                   |
+|-------------------------------------------------------|------------------------------------------------------------------------------|
+| Identify appropriate methods and metrics              | Risk levels NONE / LOW / MEDIUM / HIGH; tests assert each level              |
+| Track AI risk through measurement and assessment      | Every escalation persisted with matched signals; admin dashboard exposes them |
+| Track regression                                      | `tests/test_guardrail.py` catches regressions in pattern matching            |
+
+### Manage
+
+| AI RMF expectation                                    | How this repo addresses it                                                   |
+|-------------------------------------------------------|------------------------------------------------------------------------------|
+| Prioritize and respond to risks based on impact       | MEDIUM/HIGH bypass the LLM and return canned safe content                    |
+| Allocate resources to manage risk                     | Human-in-the-loop admin queue at `/admin` for reviewer follow-up             |
+| Document residual risk                                | "Known limitations" section below                                            |
+
+## Belmont alignment
+
+- **Beneficence ("do no harm").** The system errs on the side of redirecting
+  the user to human help rather than trying to solve distress with an LLM,
+  which could hallucinate harmful content. The LLM is forbidden by its
+  system prompt from giving clinical advice or naming methods of self-harm.
+- **Respect for persons.** No identifying information (full names,
+  addresses, etc.) is collected; the only identifier persisted is the
+  client-generated `conversation_id` (a UUID stored in `localStorage`). The
+  LLM system prompt instructs the model not to ask for identifying details.
+- **Justice.** The crisis-resource template includes both US lines (988,
+  Crisis Text Line, SAMHSA) and a link to the international IASP directory,
+  so non-US users are not left without a referral.
+
+## Course-specific themes
+
+- **Human-in-the-loop.** Every escalation is logged and surfaced on a
+  reviewer dashboard. The bot's output is treated as a *draft* (per the
+  course materials) — a human reviewer can audit it after the fact and is
+  notified at the moment of escalation.
+- **Reproducibility.** The detector is rule-based and version-controlled, so
+  any researcher can trace why a given message was classified the way it
+  was. Tests cover each risk level.
+- **Transparency vs. protection.** The repo is private during the course,
+  the SQLite database is local-only, and the `.env` file is gitignored —
+  protecting any test data — while the code is fully transparent.
+
+## Known limitations
+
+These are intentionally documented (not buried) because the framework
+expects "residual risk" to be acknowledged:
+
+1. **Rule-based detection is a starting point, not a clinical instrument.**
+   It will miss oblique, coded, multilingual, or sarcastic expressions of
+   distress. It will also fire on figurative speech, song lyrics, and
+   third-person discussion.
+2. **English-only.** All patterns and the canned safe template are in
+   English. Non-English speakers are at risk of being missed.
+3. **No trained classifier or LLM judge tier.** A production system should
+   layer at least one ML classifier and an LLM judge on top of the rule
+   set, then re-evaluate against fresh ground-truth labels periodically.
+4. **No abuse / red-team testing in code.** The prototype documents the
+   need for red-teaming but does not ship adversarial test cases.
+5. **HTTP Basic admin auth is for local demos only.** Any real deployment
+   would need real auth, audit logs, and TLS.
+6. **OpenRouter is a third-party processor.** Anything sent to the chat
+   endpoint reaches OpenRouter and the chosen upstream model. The README
+   names the model so a reviewer can assess that processor's terms.
+
+When in doubt, the repo defaults to the safer behavior: log it, surface it
+to a human, and refer the user to a trained crisis line.

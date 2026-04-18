@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin — Mindful Chat</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="admin-body">
+  <header class="banner banner--info">
+    <strong>Admin dashboard.</strong> Human-in-the-loop review of escalated
+    conversations. Acknowledging an item records the reviewer and a timestamp.
+  </header>
+
+  <main class="admin">
+    <h1>Escalations</h1>
+    <p class="muted small">
+      Risk levels:
+      <span class="risk risk--low">low</span>
+      <span class="risk risk--medium">medium</span>
+      <span class="risk risk--high">high</span>
+    </p>
+
+    <div class="controls">
+      <label>
+        <input type="checkbox" id="unack-only" checked />
+        Show only unacknowledged
+      </label>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+
+    <table class="esc-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>When</th>
+          <th>Risk</th>
+          <th>Source</th>
+          <th>Conversation</th>
+          <th>User message</th>
+          <th>Matched signals</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </main>
+
+  <script>
+    const rowsEl = document.getElementById("rows");
+    const unackOnly = document.getElementById("unack-only");
+    const refreshBtn = document.getElementById("refresh");
+
+    function escapeHtml(s) {
+      return String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    async function loadEscalations() {
+      const url = `/api/admin/escalations?unack_only=${unackOnly.checked}`;
+      const res = await fetch(url, { credentials: "same-origin" });
+      if (res.status === 401) {
+        rowsEl.innerHTML = `<tr><td colspan="9">Not authorized. Refresh and re-enter admin credentials.</td></tr>`;
+        return;
+      }
+      if (!res.ok) {
+        rowsEl.innerHTML = `<tr><td colspan="9">Error ${res.status}</td></tr>`;
+        return;
+      }
+      const items = await res.json();
+      if (items.length === 0) {
+        rowsEl.innerHTML = `<tr><td colspan="9" class="muted">No escalations to show.</td></tr>`;
+        return;
+      }
+      rowsEl.innerHTML = items.map((r) => {
+        const status = r.acknowledged
+          ? `acked by ${escapeHtml(r.acknowledged_by)} at ${escapeHtml(r.acknowledged_at)}`
+          : "open";
+        const action = r.acknowledged
+          ? ""
+          : `<button data-id="${r.id}" class="ack">Acknowledge</button>`;
+        return `<tr class="row row--${escapeHtml(r.risk_level)}">
+          <td>${r.id}</td>
+          <td>${escapeHtml(r.created_at)}</td>
+          <td><span class="risk risk--${escapeHtml(r.risk_level)}">${escapeHtml(r.risk_level)}</span></td>
+          <td>${escapeHtml(r.source)}</td>
+          <td><code>${escapeHtml(r.conversation_id)}</code></td>
+          <td class="msg-cell">${escapeHtml(r.user_message)}</td>
+          <td class="signals">${escapeHtml(r.matched_signals)}</td>
+          <td>${status}</td>
+          <td>${action}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    rowsEl.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button.ack");
+      if (!btn) return;
+      const id = btn.dataset.id;
+      const notes = prompt("Optional reviewer notes:") || null;
+      const res = await fetch(`/api/admin/escalations/${id}/acknowledge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+      if (res.ok) {
+        loadEscalations();
+      } else {
+        alert(`Acknowledge failed: ${res.status}`);
+      }
+    });
+
+    unackOnly.addEventListener("change", loadEscalations);
+    refreshBtn.addEventListener("click", loadEscalations);
+    loadEscalations();
+  </script>
+</body>
+</html>
