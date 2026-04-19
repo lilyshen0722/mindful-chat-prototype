@@ -6,12 +6,17 @@
 > **Crisis Text Line** (text **HOME** to **741741**),
 > or see https://www.iasp.info for international resources.
 
-A demonstration of a layered guardrail that sits between a user-facing chat UI
-and a Large Language Model, with the goals of (a) detecting language
-associated with suicidal ideation or self-harm, (b) redirecting the user to
-human-staffed crisis resources, and (c) routing the conversation to a
-simulated administrator review queue so a human-in-the-loop can audit the
-system's behavior.
+A demonstration of an *advisory* guardrail layered around an LLM-powered
+chatbot. The bot itself is meant to feel like a normal chat assistant — the
+guardrail does NOT replace its replies. Instead it (a) detects language
+associated with distress or self-harm, (b) modulates the LLM's system prompt
+so it responds with the right tone for each turn (curious on LOW, validating
++ gently mentioning 988 on MEDIUM, urgent on HIGH), (c) softly appends
+crisis resources only if the model failed to mention any, and (d) routes
+every concern signal to a simulated administrator review queue so a
+human-in-the-loop can audit the system's behavior. The only path that
+overrides the model's reply is the outbound guardrail (when the model
+itself produces unsafe content), which falls back to a safe template.
 
 Built for **DSCI 305 (Spring 2026)** — final project on data/AI ethics.
 

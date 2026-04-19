@@ -37,7 +37,7 @@ deliverable of the framework.
 
 | AI RMF expectation                                    | How this repo addresses it                                                   |
 |-------------------------------------------------------|------------------------------------------------------------------------------|
-| Prioritize and respond to risks based on impact       | MEDIUM/HIGH bypass the LLM and return canned safe content                    |
+| Prioritize and respond to risks based on impact       | Risk-aware system prompt makes the LLM more attentive on LOW/MEDIUM/HIGH; a soft 988 footer is appended only if the model omitted any resource; outbound guardrail still hard-replaces unsafe LLM output with the safe template |
 | Allocate resources to manage risk                     | Human-in-the-loop admin queue at `/admin` for reviewer follow-up             |
 | Document residual risk                                | "Known limitations" section below                                            |
 

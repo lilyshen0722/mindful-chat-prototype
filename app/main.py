@@ -1,14 +1,15 @@
+import json
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-import secrets
 
 from .config import settings
 from .crisis_resources import CRISIS_MESSAGE, US_RESOURCES
@@ -20,8 +21,8 @@ from .db import (
     recent_history,
     save_message,
 )
-from .guardrail import RiskLevel, assess
-from .llm import LLMUnavailable, chat as llm_chat
+from .guardrail import GuardrailResult, RiskLevel, assess
+from .llm import LLMUnavailable, build_system_prompt, chat_stream
 
 
 @asynccontextmanager
@@ -30,7 +31,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
 
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -58,13 +59,6 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
 
 
-class ChatResponse(BaseModel):
-    reply: str
-    risk_level: str
-    escalated: bool
-    resources: list[dict] = []
-
-
 class AcknowledgeRequest(BaseModel):
     notes: Optional[str] = None
 
@@ -86,52 +80,102 @@ def health() -> dict:
 
 
 # ------------------------------------------------------------------ chat
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat_endpoint(req: ChatRequest) -> ChatResponse:
-    inbound = assess(req.message)
+RESOURCE_FOOTER = (
+    "\n\nIf you'd like to talk to someone trained right now, **988** "
+    "(call or text in the US) is free, confidential, and available 24/7."
+)
+
+_RESOURCE_HINTS = ("988", "crisis text line", "741741", "iasp.info", "samhsa", "trevor project")
+
+
+def _mentions_resource(text: str) -> bool:
+    t = text.lower()
+    return any(hint in t for hint in _RESOURCE_HINTS)
+
+
+def _sse(payload: dict) -> str:
+    """Format a single Server-Sent Event with a JSON payload."""
+    return f"data: {json.dumps(payload)}\n\n"
+
+
+@app.post("/api/chat")
+async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
+    """Stream the bot's reply token by token.
+
+    The LLM is always invoked with a risk-aware system prompt. Resources are
+    grafted softly only when the inbound message tripped the guardrail and
+    the LLM did not include any resource on its own. The outbound guardrail
+    can still replace the entire reply if the LLM produced unsafe content.
+    """
+    inbound: GuardrailResult = assess(req.message)
     save_message(req.conversation_id, "user", req.message, inbound.risk.value)
 
-    # MEDIUM/HIGH inbound: skip the LLM entirely.
-    if inbound.block_llm:
-        reply = CRISIS_MESSAGE
-        log_escalation(req.conversation_id, inbound, req.message, reply, source="input")
-        save_message(req.conversation_id, "assistant", reply, inbound.risk.value)
-        return ChatResponse(
-            reply=reply,
-            risk_level=inbound.risk.value,
-            escalated=True,
-            resources=US_RESOURCES,
-        )
-
-    # Otherwise call the LLM with recent history.
     history = recent_history(req.conversation_id, limit=10)
-    try:
-        reply = await llm_chat(history)
-    except LLMUnavailable as e:
-        reply = f"[Configuration error] {e}"
-    except httpx.HTTPError as e:
-        reply = f"[Upstream error from OpenRouter] {e}"
+    system_prompt = build_system_prompt(inbound.risk)
 
-    # Defense in depth: assess the bot's reply too.
-    outbound = assess(reply)
-    if outbound.is_escalation:
-        log_escalation(req.conversation_id, outbound, req.message, reply, source="output")
-        reply = CRISIS_MESSAGE
-        risk_for_reply = outbound.risk.value
-    else:
-        risk_for_reply = inbound.risk.value
+    async def generator():
+        parts: list[str] = []
+        try:
+            async for token in chat_stream(history, system_prompt):
+                parts.append(token)
+                yield _sse({"type": "token", "value": token})
+        except LLMUnavailable as e:
+            msg = f"[Configuration error] {e}"
+            parts = [msg]
+            yield _sse({"type": "token", "value": msg})
+        except httpx.HTTPError as e:
+            msg = f"[Upstream error from OpenRouter] {e}"
+            parts = [msg]
+            yield _sse({"type": "token", "value": msg})
 
-    if inbound.risk == RiskLevel.LOW:
-        log_escalation(req.conversation_id, inbound, req.message, reply, source="input")
+        full_reply = "".join(parts).strip() or "[no response]"
 
-    save_message(req.conversation_id, "assistant", reply, risk_for_reply)
+        # Outbound guardrail: if the LLM produced unsafe content, replace it
+        # with the safe template. This is the only path that overrides the
+        # model's reply.
+        outbound = assess(full_reply)
+        if outbound.is_escalation:
+            log_escalation(
+                req.conversation_id,
+                outbound,
+                req.message,
+                full_reply,
+                source="output",
+            )
+            full_reply = CRISIS_MESSAGE
+            yield _sse({"type": "replace", "value": full_reply})
 
-    escalated = inbound.risk != RiskLevel.NONE or outbound.is_escalation
-    return ChatResponse(
-        reply=reply,
-        risk_level=risk_for_reply,
-        escalated=escalated,
-        resources=US_RESOURCES if escalated else [],
+        # Soft resource graft: only if inbound was concerning AND the LLM
+        # forgot to mention any resource. We do not replace its reply.
+        elif inbound.risk in (RiskLevel.MEDIUM, RiskLevel.HIGH) and not _mentions_resource(full_reply):
+            full_reply += RESOURCE_FOOTER
+            yield _sse({"type": "token", "value": RESOURCE_FOOTER})
+
+        # Always log inbound concern signals for the admin queue.
+        if inbound.risk != RiskLevel.NONE:
+            log_escalation(
+                req.conversation_id,
+                inbound,
+                req.message,
+                full_reply,
+                source="input",
+            )
+
+        save_message(req.conversation_id, "assistant", full_reply, inbound.risk.value)
+
+        yield _sse({
+            "type": "done",
+            "risk_level": inbound.risk.value,
+            "escalated": inbound.risk != RiskLevel.NONE or outbound.is_escalation,
+        })
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

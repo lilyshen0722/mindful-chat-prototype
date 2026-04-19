@@ -42,13 +42,16 @@ _LEVEL_RANK = {
 }
 
 
+_I_AM = r"(?:i['’]?m|i\s+am)"  # contracted or non-contracted
+
 LOW_PATTERNS = [
-    r"\bi['’]?m\s+(?:so\s+)?(?:tired|exhausted|hopeless|worthless|empty|numb|lost)\b",
+    rf"\b{_I_AM}\s+(?:so\s+)?(?:tired|exhausted|hopeless|worthless|empty|numb|lost)\b",
     r"\bi\s+(?:can[’']?t|cannot)\s+(?:keep\s+going|do\s+this\s+anymore|take\s+(?:it|this)\s+anymore)\b",
     r"\bno\s+(?:point|reason)\s+(?:in|to)\s+(?:living|going\s+on|trying)\b",
     r"\bnothing\s+matters\b",
     r"\bgive\s+up\s+on\s+(?:life|everything)\b",
     r"\bi\s+(?:hate|don[’']?t\s+want)\s+my\s+life\b",
+    r"\bi\s+feel\s+(?:so\s+)?(?:tired|exhausted|hopeless|worthless|empty|numb|lost|alone)\b",
 ]
 
 MEDIUM_PATTERNS = [

@@ -6,41 +6,45 @@
        ┌──────────────────┐
   user │   Browser (chat) │
        └────────┬─────────┘
-                │  POST /api/chat
+                │  POST /api/chat   (Server-Sent Events response)
                 ▼
-       ┌──────────────────────────────────────────┐
-       │ FastAPI app (app/main.py)                │
-       │                                          │
-       │  1. assess(user_message)                 │  ── app/guardrail.py
-       │     ├─ NONE → continue                   │
-       │     ├─ LOW  → log; continue (LLM still)  │
-       │     └─ MEDIUM/HIGH → block, log,         │
-       │           return CRISIS_MESSAGE          │  ── app/crisis_resources.py
-       │                                          │
-       │  2. recent_history(conversation_id)      │  ── app/db.py
-       │  3. POST /chat/completions to OpenRouter │  ── app/llm.py
-       │  4. assess(llm_reply)                    │
-       │     └─ MEDIUM/HIGH → log; replace reply  │
-       │           with CRISIS_MESSAGE            │
-       │  5. save assistant message               │
-       │  6. return ChatResponse(reply, risk,     │
-       │                         escalated, …)    │
-       └────────┬──────────────────────────┬──────┘
-                │                          │
-                │ writes                   │ writes
-                ▼                          ▼
-       ┌────────────────┐         ┌────────────────────┐
-       │ conversations  │         │   escalations      │
-       │   (sqlite)     │         │     (sqlite)       │
-       └────────────────┘         └─────────┬──────────┘
-                                            │ read
-                                            ▼
-                                  ┌────────────────────┐
-                                  │ /admin dashboard   │
-                                  │ HTTP Basic auth    │  ── reviewer
-                                  │ ack + notes        │     (human-in-the-loop)
-                                  └────────────────────┘
+       ┌────────────────────────────────────────────────────────┐
+       │ FastAPI app (app/main.py)                              │
+       │                                                        │
+       │ 1. inbound = assess(user_message)        ── guardrail  │
+       │ 2. system_prompt = build_system_prompt(inbound.risk)   │
+       │      (NONE / LOW / MEDIUM / HIGH variants — see        │
+       │       app/llm.py — modulate tone, not flow)            │
+       │ 3. stream OpenRouter → yield tokens to client          │
+       │ 4. outbound = assess(full_reply)                       │
+       │      ├─ unsafe?  → emit "replace" event with safe       │
+       │      │             template; row in escalations(output)│
+       │      └─ safe but inbound was MEDIUM/HIGH and the LLM   │
+       │         omitted any resource → emit short footer       │
+       │ 5. inbound risk != NONE  → row in escalations(input)   │
+       │ 6. persist conversation + emit "done" event            │
+       └────────┬──────────────────────────────────┬────────────┘
+                │ writes                           │ writes
+                ▼                                  ▼
+       ┌────────────────┐                ┌────────────────────┐
+       │ conversations  │                │   escalations      │
+       │   (sqlite)     │                │     (sqlite)       │
+       └────────────────┘                └─────────┬──────────┘
+                                                   │ read
+                                                   ▼
+                                         ┌────────────────────┐
+                                         │ /admin dashboard   │
+                                         │ HTTP Basic auth    │  ── reviewer
+                                         │ ack + notes        │     (human-in-the-loop)
+                                         └────────────────────┘
 ```
+
+**Key design choice (v0.2):** the LLM is never bypassed. The guardrail is
+*advisory* — it modulates the model's system prompt and logs every concern
+signal to the admin queue. Resources surface gradually through conversation
+rather than as a hard interrupt. The only path that overrides the model's
+reply is the outbound guardrail (when the LLM itself produces unsafe
+content), and it falls back to the safe template in `crisis_resources.py`.
 
 ## Components
 
@@ -82,10 +86,10 @@ fired the alert.
 
 | Failure                          | What happens                                                            |
 |----------------------------------|-------------------------------------------------------------------------|
-| `OPENROUTER_API_KEY` missing     | `LLMUnavailable` raised → user sees a `[Configuration error]` reply.    |
-| OpenRouter HTTP error / timeout  | `httpx.HTTPError` caught → user sees `[Upstream error]`.                |
-| Inbound guardrail trips          | LLM is bypassed entirely; user gets `CRISIS_MESSAGE`; row in `escalations`. |
-| Outbound guardrail trips         | LLM reply is replaced with `CRISIS_MESSAGE` before being saved/sent.    |
+| `OPENROUTER_API_KEY` missing     | `LLMUnavailable` raised → user sees a `[Configuration error]` token.    |
+| OpenRouter HTTP error / timeout  | `httpx.HTTPError` caught → user sees `[Upstream error]` token.          |
+| Inbound guardrail trips (LOW/MED/HIGH) | LLM still answers, with a risk-aware system prompt; row in `escalations(input)`. If MEDIUM/HIGH and the model didn't mention any resource, a short 988 footer is appended via a final `token` event. |
+| Outbound guardrail trips         | LLM reply is replaced with `CRISIS_MESSAGE` via a `replace` event; row in `escalations(output)`. |
 | Admin credentials wrong          | `401` with `WWW-Authenticate: Basic` header.                            |
 
 ## Local deployment

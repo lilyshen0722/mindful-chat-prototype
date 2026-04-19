@@ -23,7 +23,7 @@
     <div id="messages" class="messages" aria-live="polite"></div>
 
     <form id="chat-form" class="composer">
-      <textarea id="input" name="message" placeholder="Type a message…" rows="2" required></textarea>
+      <textarea id="msg-input" name="message" placeholder="Type a message…" rows="2" required></textarea>
       <button type="submit" id="send">Send</button>
     </form>
 
@@ -33,23 +33,37 @@
   </main>
 
   <script>
+    // ---- conversation id -------------------------------------------------
+    function makeId() {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID();
+      }
+      // Fallback for older browsers.
+      return "cid-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+    }
     const conversationId = (() => {
       const k = "mindful-chat-cid";
-      let v = localStorage.getItem(k);
-      if (!v) {
-        v = crypto.randomUUID();
-        localStorage.setItem(k, v);
+      try {
+        let v = localStorage.getItem(k);
+        if (!v) {
+          v = makeId();
+          localStorage.setItem(k, v);
+        }
+        return v;
+      } catch {
+        return makeId();
       }
-      return v;
     })();
 
+    // ---- DOM refs --------------------------------------------------------
     const messagesEl = document.getElementById("messages");
     const formEl = document.getElementById("chat-form");
-    const inputEl = document.getElementById("input");
+    const inputEl = document.getElementById("msg-input");
     const sendBtn = document.getElementById("send");
 
+    // ---- helpers ---------------------------------------------------------
     function escapeHtml(s) {
-      return s
+      return String(s ?? "")
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
@@ -58,7 +72,6 @@
     }
 
     function renderText(s) {
-      // Minimal markdown: **bold**, line breaks, autolink http(s) URLs.
       let html = escapeHtml(s);
       html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       html = html.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
@@ -66,46 +79,121 @@
       return html;
     }
 
-    function appendMessage(role, text, meta) {
+    function appendMessage(role, text) {
       const wrap = document.createElement("div");
       wrap.className = `msg msg--${role}`;
       const bubble = document.createElement("div");
       bubble.className = "bubble";
       bubble.innerHTML = renderText(text);
       wrap.appendChild(bubble);
-      if (meta) {
-        const m = document.createElement("div");
-        m.className = "meta";
-        m.textContent = meta;
-        wrap.appendChild(m);
-      }
       messagesEl.appendChild(wrap);
       messagesEl.scrollTop = messagesEl.scrollHeight;
+      return { wrap, bubble };
     }
 
-    formEl.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const text = inputEl.value.trim();
-      if (!text) return;
+    function appendStreamingBubble() {
+      const wrap = document.createElement("div");
+      wrap.className = "msg msg--assistant streaming";
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
+      wrap.appendChild(bubble);
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      wrap.appendChild(meta);
+      messagesEl.appendChild(wrap);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      return { wrap, bubble, meta };
+    }
+
+    // Parse one SSE event block ("data: ...\n[event: ...\n]")
+    function parseSseBlock(block) {
+      const out = { event: "message", data: null };
+      for (const rawLine of block.split("\n")) {
+        const line = rawLine.replace(/\r$/, "");
+        if (line.startsWith("event: ")) out.event = line.slice(7).trim();
+        else if (line.startsWith("data: ")) out.data = line.slice(6);
+      }
+      return out;
+    }
+
+    // ---- send loop -------------------------------------------------------
+    async function sendMessage(text) {
       appendMessage("user", text);
-      inputEl.value = "";
-      sendBtn.disabled = true;
-      sendBtn.textContent = "…";
+      const { wrap, bubble, meta } = appendStreamingBubble();
+      let accumulated = "";
+      let firstToken = true;
+
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ conversation_id: conversationId, message: text }),
         });
-        if (!res.ok) {
-          appendMessage("system", `Request failed: ${res.status}`);
+        if (!res.ok || !res.body) {
+          bubble.textContent = `Request failed: ${res.status}`;
           return;
         }
-        const data = await res.json();
-        const meta = data.escalated ? `risk: ${data.risk_level} · escalated to admin` : "";
-        appendMessage("assistant", data.reply, meta);
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          // SSE events are separated by a blank line.
+          let idx;
+          while ((idx = buffer.indexOf("\n\n")) !== -1) {
+            const block = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            if (!block.trim()) continue;
+
+            const { data } = parseSseBlock(block);
+            if (!data) continue;
+            let payload;
+            try { payload = JSON.parse(data); } catch { continue; }
+
+            if (payload.type === "token") {
+              if (firstToken) {
+                bubble.innerHTML = "";
+                wrap.classList.remove("streaming");
+                firstToken = false;
+              }
+              accumulated += payload.value;
+              bubble.innerHTML = renderText(accumulated);
+              messagesEl.scrollTop = messagesEl.scrollHeight;
+            } else if (payload.type === "replace") {
+              accumulated = payload.value;
+              bubble.innerHTML = renderText(accumulated);
+              wrap.classList.remove("streaming");
+              firstToken = false;
+            } else if (payload.type === "done") {
+              if (payload.escalated) {
+                meta.textContent = `risk: ${payload.risk_level} · logged for review`;
+              }
+              if (firstToken) {
+                bubble.textContent = "[no response]";
+              }
+            }
+          }
+        }
       } catch (err) {
-        appendMessage("system", `Error: ${err}`);
+        bubble.textContent = `[Error] ${err}`;
+      }
+    }
+
+    formEl.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = inputEl.value.trim();
+      if (!text) return;
+      inputEl.value = "";
+      sendBtn.disabled = true;
+      sendBtn.textContent = "…";
+      try {
+        await sendMessage(text);
       } finally {
         sendBtn.disabled = false;
         sendBtn.textContent = "Send";
@@ -118,6 +206,12 @@
         e.preventDefault();
         formEl.requestSubmit();
       }
+    });
+
+    // Visible JS error reporting so future regressions don't disappear silently.
+    window.addEventListener("error", (e) => {
+      const msg = `[JS error] ${e.message} (${e.filename}:${e.lineno})`;
+      appendMessage("system", msg);
     });
   </script>
 </body>
