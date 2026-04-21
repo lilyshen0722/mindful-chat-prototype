@@ -82,7 +82,7 @@ def _payload(history: list[dict[str, str]], system_prompt: str, *, stream: bool)
         "model": settings.openrouter_model,
         "messages": [{"role": "system", "content": system_prompt}, *history],
         "temperature": 0.5,
-        "max_tokens": 400,
+        "max_tokens": 800,
         "stream": stream,
     }
 

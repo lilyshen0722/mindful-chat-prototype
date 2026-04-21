@@ -143,45 +143,54 @@
         const decoder = new TextDecoder();
         let buffer = "";
 
+        const handleEvent = (block) => {
+          if (!block.trim()) return;
+          const { data } = parseSseBlock(block);
+          if (!data) return;
+          let payload;
+          try { payload = JSON.parse(data); } catch { return; }
+
+          if (payload.type === "token") {
+            if (firstToken) {
+              bubble.innerHTML = "";
+              wrap.classList.remove("streaming");
+              firstToken = false;
+            }
+            accumulated += payload.value;
+            bubble.innerHTML = renderText(accumulated);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+          } else if (payload.type === "replace") {
+            accumulated = payload.value;
+            bubble.innerHTML = renderText(accumulated);
+            wrap.classList.remove("streaming");
+            firstToken = false;
+          } else if (payload.type === "done") {
+            if (payload.escalated) {
+              meta.textContent = `risk: ${payload.risk_level} · logged for review`;
+            }
+            if (firstToken) {
+              bubble.textContent = "[no response]";
+            }
+          }
+        };
+
         while (true) {
           const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
+          if (value) buffer += decoder.decode(value, { stream: !done });
 
           // SSE events are separated by a blank line.
           let idx;
           while ((idx = buffer.indexOf("\n\n")) !== -1) {
             const block = buffer.slice(0, idx);
             buffer = buffer.slice(idx + 2);
-            if (!block.trim()) continue;
+            handleEvent(block);
+          }
 
-            const { data } = parseSseBlock(block);
-            if (!data) continue;
-            let payload;
-            try { payload = JSON.parse(data); } catch { continue; }
-
-            if (payload.type === "token") {
-              if (firstToken) {
-                bubble.innerHTML = "";
-                wrap.classList.remove("streaming");
-                firstToken = false;
-              }
-              accumulated += payload.value;
-              bubble.innerHTML = renderText(accumulated);
-              messagesEl.scrollTop = messagesEl.scrollHeight;
-            } else if (payload.type === "replace") {
-              accumulated = payload.value;
-              bubble.innerHTML = renderText(accumulated);
-              wrap.classList.remove("streaming");
-              firstToken = false;
-            } else if (payload.type === "done") {
-              if (payload.escalated) {
-                meta.textContent = `risk: ${payload.risk_level} · logged for review`;
-              }
-              if (firstToken) {
-                bubble.textContent = "[no response]";
-              }
-            }
+          if (done) {
+            // Flush any trailing event that didn't have its blank line.
+            if (buffer.trim()) handleEvent(buffer);
+            buffer = "";
+            break;
           }
         }
       } catch (err) {
