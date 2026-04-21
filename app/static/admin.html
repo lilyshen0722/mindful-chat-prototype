@@ -26,7 +26,12 @@
         <input type="checkbox" id="unack-only" checked />
         Show only unacknowledged
       </label>
-      <button id="refresh" type="button">Refresh</button>
+      <label>
+        <input type="checkbox" id="auto-refresh" checked />
+        Auto-refresh every 3s
+      </label>
+      <button id="refresh" type="button">Refresh now</button>
+      <span id="last-updated" class="muted small"></span>
     </div>
 
     <table class="esc-table">
@@ -50,7 +55,11 @@
   <script>
     const rowsEl = document.getElementById("rows");
     const unackOnly = document.getElementById("unack-only");
+    const autoRefresh = document.getElementById("auto-refresh");
     const refreshBtn = document.getElementById("refresh");
+    const lastUpdatedEl = document.getElementById("last-updated");
+
+    let pollTimer = null;
 
     function escapeHtml(s) {
       return String(s ?? "")
@@ -62,10 +71,16 @@
     }
 
     async function loadEscalations() {
-      const url = `/api/admin/escalations?unack_only=${unackOnly.checked}`;
-      const res = await fetch(url, { credentials: "same-origin" });
+      // Cache-bust to defeat any browser/proxy caching of the GET.
+      const url = `/api/admin/escalations?unack_only=${unackOnly.checked}&_=${Date.now()}`;
+      const res = await fetch(url, {
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
       if (res.status === 401) {
         rowsEl.innerHTML = `<tr><td colspan="9">Not authorized. Refresh and re-enter admin credentials.</td></tr>`;
+        stopPolling();
         return;
       }
       if (!res.ok) {
@@ -73,6 +88,7 @@
         return;
       }
       const items = await res.json();
+      lastUpdatedEl.textContent = `last updated ${new Date().toLocaleTimeString()} · ${items.length} ${items.length === 1 ? "row" : "rows"}`;
       if (items.length === 0) {
         rowsEl.innerHTML = `<tr><td colspan="9" class="muted">No escalations to show.</td></tr>`;
         return;
@@ -115,9 +131,31 @@
       }
     });
 
+    function startPolling() {
+      stopPolling();
+      pollTimer = setInterval(() => {
+        // Pause polling when the tab is hidden — saves bandwidth and avoids
+        // pile-ups if the user comes back to a queued list of intervals.
+        if (document.hidden) return;
+        loadEscalations();
+      }, 3000);
+    }
+    function stopPolling() {
+      if (pollTimer !== null) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    }
+
     unackOnly.addEventListener("change", loadEscalations);
     refreshBtn.addEventListener("click", loadEscalations);
+    autoRefresh.addEventListener("change", () => {
+      if (autoRefresh.checked) startPolling();
+      else stopPolling();
+    });
+
     loadEscalations();
+    if (autoRefresh.checked) startPolling();
   </script>
 </body>
 </html>
