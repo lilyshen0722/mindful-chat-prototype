@@ -75,6 +75,17 @@ def recent_history(conversation_id: str, limit: int = 10) -> list[dict[str, str]
     return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
 
+def conversation_messages(conversation_id: str, limit: int = 200) -> list[dict]:
+    """All messages for a conversation, oldest first, with timestamps."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT role, content, risk_level, created_at FROM conversations "
+            "WHERE conversation_id = ? ORDER BY id ASC LIMIT ?",
+            (conversation_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def log_escalation(
     conversation_id: str,
     result: GuardrailResult,

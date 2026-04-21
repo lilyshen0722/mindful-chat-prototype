@@ -55,7 +55,27 @@ a { color: var(--accent); }
   padding: 0 1rem 2rem;
 }
 .chat h1 {
+  margin: 0;
+}
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   margin-bottom: 0.25rem;
+}
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-secondary:hover {
+  background: #ecece6;
 }
 .messages {
   background: #fff;

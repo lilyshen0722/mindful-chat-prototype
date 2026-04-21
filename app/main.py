@@ -15,6 +15,7 @@ from .config import settings
 from .crisis_resources import CRISIS_MESSAGE, US_RESOURCES
 from .db import (
     acknowledge_escalation,
+    conversation_messages,
     init_db,
     list_escalations,
     log_escalation,
@@ -77,6 +78,12 @@ def admin_page() -> FileResponse:
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/api/conversation/{conversation_id}/messages")
+def get_conversation_messages(conversation_id: str) -> list[dict]:
+    """Return the visible message log for a conversation_id (oldest first)."""
+    return conversation_messages(conversation_id)
 
 
 # ------------------------------------------------------------------ chat

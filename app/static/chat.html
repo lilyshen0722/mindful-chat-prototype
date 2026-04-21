@@ -14,7 +14,10 @@
   </header>
 
   <main class="chat">
-    <h1>Mindful Chat</h1>
+    <div class="chat-header">
+      <h1>Mindful Chat</h1>
+      <button id="new-chat" type="button" class="btn-secondary" title="Start a fresh conversation. Past messages stay in the admin log but won't appear here.">New conversation</button>
+    </div>
     <p class="muted small">
       An academic prototype that demonstrates a crisis-language guardrail
       around a chatbot. Conversations are logged locally for research review.
@@ -60,6 +63,7 @@
     const formEl = document.getElementById("chat-form");
     const inputEl = document.getElementById("msg-input");
     const sendBtn = document.getElementById("send");
+    const newChatBtn = document.getElementById("new-chat");
 
     // ---- helpers ---------------------------------------------------------
     function escapeHtml(s) {
@@ -208,11 +212,36 @@
       }
     });
 
+    newChatBtn.addEventListener("click", () => {
+      const ok = confirm(
+        "Start a new conversation?\n\n" +
+        "Past messages will remain in the admin review log, but won't appear in this chat anymore."
+      );
+      if (!ok) return;
+      try { localStorage.setItem("mindful-chat-cid", makeId()); } catch {}
+      location.reload();
+    });
+
     // Visible JS error reporting so future regressions don't disappear silently.
     window.addEventListener("error", (e) => {
       const msg = `[JS error] ${e.message} (${e.filename}:${e.lineno})`;
       appendMessage("system", msg);
     });
+
+    // ---- on load: hydrate past messages for this conversation -----------
+    (async function hydrateHistory() {
+      try {
+        const res = await fetch(`/api/conversation/${encodeURIComponent(conversationId)}/messages`);
+        if (!res.ok) return;
+        const items = await res.json();
+        for (const m of items) {
+          const role = m.role === "user" ? "user" : "assistant";
+          appendMessage(role, m.content);
+        }
+      } catch {
+        // silent — fresh chat is fine
+      }
+    })();
   </script>
 </body>
 </html>
