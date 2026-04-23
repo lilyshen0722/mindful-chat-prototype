@@ -15,6 +15,7 @@
   --risk-low: #f4d35e;
   --risk-medium: #ee964b;
   --risk-high: #c1374b;
+  --risk-divergence: #9c8cc7;
 }
 
 * { box-sizing: border-box; }
@@ -190,9 +191,11 @@ a { color: var(--accent); }
 .risk--low { background: var(--risk-low); color: #2a2a2a; }
 .risk--medium { background: var(--risk-medium); color: #fff; }
 .risk--high { background: var(--risk-high); color: #fff; }
+.risk--divergence { background: var(--risk-divergence); color: #fff; }
 
 .row--high { background: rgba(193, 55, 75, 0.06); }
 .row--medium { background: rgba(238, 150, 75, 0.06); }
+.row--divergence { background: rgba(156, 140, 199, 0.06); }
 
 /* ============ Typing indicator ============ */
 .typing {

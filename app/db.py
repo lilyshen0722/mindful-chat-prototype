@@ -110,6 +110,27 @@ def log_escalation(
         return cur.lastrowid
 
 
+def log_divergence(conversation_id: str, user_message: str, bot_response: str) -> int:
+    # The model volunteered a crisis resource on a message the rule-based
+    # guardrail rated NONE. That mismatch is what a human reviewer needs to see —
+    # it's evidence the LLM is broadening "crisis" beyond the documented policy.
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO escalations "
+            "(conversation_id, risk_level, source, matched_signals, user_message, bot_response) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                conversation_id,
+                "divergence",
+                "divergence",
+                json.dumps(["divergence: bot mentioned crisis resource on NONE-risk message"]),
+                user_message,
+                bot_response,
+            ),
+        )
+        return cur.lastrowid
+
+
 def list_escalations(unack_only: bool = False, limit: int = 200) -> list[dict]:
     sql = "SELECT * FROM escalations"
     if unack_only:

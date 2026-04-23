@@ -18,6 +18,7 @@ from .db import (
     conversation_messages,
     init_db,
     list_escalations,
+    log_divergence,
     log_escalation,
     recent_history,
     save_message,
@@ -167,6 +168,11 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
                 full_reply,
                 source="input",
             )
+        # Divergence: rule-based guardrail says NONE but the model volunteered a
+        # crisis resource anyway. The reviewer needs to see this — it's evidence
+        # the LLM is broadening "crisis" beyond the documented policy.
+        elif not outbound.is_escalation and _mentions_resource(full_reply):
+            log_divergence(req.conversation_id, req.message, full_reply)
 
         save_message(req.conversation_id, "assistant", full_reply, inbound.risk.value)
 
