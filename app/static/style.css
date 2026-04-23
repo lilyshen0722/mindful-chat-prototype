@@ -55,6 +55,15 @@ a { color: var(--accent); }
   margin: 1.5rem auto;
   padding: 0 1rem 2rem;
 }
+.chat--with-sidebar {
+  max-width: 1100px;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1.5rem;
+}
+.chat-pane {
+  min-width: 0;
+}
 .chat h1 {
   margin: 0;
 }
@@ -65,6 +74,85 @@ a { color: var(--accent); }
   gap: 1rem;
   margin-bottom: 0.25rem;
 }
+.takeover-badge {
+  background: var(--info-bg);
+  border: 1px solid var(--info-border);
+  color: #1d3a78;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* ---- conversation sidebar ---- */
+.conv-sidebar {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  height: fit-content;
+  position: sticky;
+  top: 1rem;
+}
+.conv-sidebar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+.conv-sidebar__head h2 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+.conv-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.conv-item {
+  margin-bottom: 0.25rem;
+}
+.conv-item .conv-pick {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  font: inherit;
+  color: var(--fg);
+  cursor: pointer;
+}
+.conv-item .conv-pick:hover {
+  background: #f3f1ea;
+  border-color: var(--border);
+}
+.conv-item.is-active .conv-pick {
+  background: #ecece6;
+  border-color: var(--accent);
+}
+.conv-preview {
+  display: block;
+  font-size: 0.9rem;
+  margin-bottom: 0.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conv-sidebar__footnote {
+  margin: 0.5rem 0 0;
+}
+@media (max-width: 720px) {
+  .chat--with-sidebar {
+    grid-template-columns: 1fr;
+  }
+  .conv-sidebar { position: static; }
+  .conv-list { max-height: 30vh; }
+}
+
 .btn-secondary {
   background: transparent;
   border: 1px solid var(--border);
@@ -110,6 +198,11 @@ a { color: var(--accent); }
   background: #f4d35e;
   color: #2a2a2a;
   font-size: 0.85rem;
+}
+.msg--reviewer .bubble {
+  background: var(--info-bg);
+  border: 1px solid var(--info-border);
+  color: #1d3a78;
 }
 .meta {
   font-size: 0.75rem;

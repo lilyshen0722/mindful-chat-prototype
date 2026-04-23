@@ -16,6 +16,7 @@ from .crisis_resources import CRISIS_MESSAGE, US_RESOURCES
 from .db import (
     acknowledge_escalation,
     conversation_messages,
+    conversation_previews,
     init_db,
     list_escalations,
     log_divergence,
@@ -65,6 +66,10 @@ class AcknowledgeRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class PreviewRequest(BaseModel):
+    ids: list[str] = Field(default_factory=list, max_length=200)
+
+
 # ------------------------------------------------------------------ pages
 @app.get("/", response_class=HTMLResponse)
 def index() -> FileResponse:
@@ -85,6 +90,18 @@ def health() -> dict:
 def get_conversation_messages(conversation_id: str) -> list[dict]:
     """Return the visible message log for a conversation_id (oldest first)."""
     return conversation_messages(conversation_id)
+
+
+@app.post("/api/conversations/preview")
+def get_conversation_previews(body: PreviewRequest) -> list[dict]:
+    """Return previews for the conversations the client is tracking.
+
+    The client owns the list of conversation IDs (in localStorage); the server
+    only knows about a cid once it has stored a message for it. This endpoint
+    is a no-auth lookup because conversation_ids are already opaque UUIDs and
+    the client can only ask about ones it knows.
+    """
+    return conversation_previews(body.ids)
 
 
 # ------------------------------------------------------------------ chat

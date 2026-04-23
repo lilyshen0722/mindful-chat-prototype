@@ -13,59 +13,93 @@
     <a href="https://www.iasp.info/resources/Crisis_Centres/" target="_blank" rel="noopener">iasp.info</a>.
   </header>
 
-  <main class="chat">
-    <div class="chat-header">
-      <h1>Mindful Chat</h1>
-      <button id="new-chat" type="button" class="btn-secondary" title="Start a fresh conversation. Past messages stay in the admin log but won't appear here.">New conversation</button>
-    </div>
-    <p class="muted small">
-      An academic prototype that demonstrates a crisis-language guardrail
-      around a chatbot. Conversations are logged locally for research review.
-    </p>
+  <main class="chat chat--with-sidebar">
+    <aside class="conv-sidebar" aria-label="Your conversations">
+      <div class="conv-sidebar__head">
+        <h2>Conversations</h2>
+        <button id="new-chat" type="button" class="btn-secondary" title="Start a fresh conversation in a new thread.">+ New</button>
+      </div>
+      <ul id="conv-list" class="conv-list" aria-live="polite"></ul>
+      <p class="muted small conv-sidebar__footnote">
+        Conversations are stored locally in your browser and on the server's
+        local SQLite. Different browsers / incognito = separate threads.
+      </p>
+    </aside>
 
-    <div id="messages" class="messages" aria-live="polite"></div>
+    <section class="chat-pane">
+      <div class="chat-header">
+        <h1>Mindful Chat</h1>
+        <span id="takeover-badge" class="takeover-badge" hidden>👤 Human reviewer engaged</span>
+      </div>
+      <p class="muted small">
+        An academic prototype that demonstrates a crisis-language guardrail
+        around a chatbot. Conversations are logged locally for research review.
+      </p>
 
-    <form id="chat-form" class="composer">
-      <textarea id="msg-input" name="message" placeholder="Type a message…" rows="2" required></textarea>
-      <button type="submit" id="send">Send</button>
-    </form>
+      <div id="messages" class="messages" aria-live="polite"></div>
 
-    <p class="muted small">
-      <a href="/admin">Admin dashboard</a>
-    </p>
+      <form id="chat-form" class="composer">
+        <textarea id="msg-input" name="message" placeholder="Type a message…" rows="2" required></textarea>
+        <button type="submit" id="send">Send</button>
+      </form>
+
+      <p class="muted small">
+        <a href="/admin">Admin dashboard</a>
+      </p>
+    </section>
   </main>
 
   <script>
-    // ---- conversation id -------------------------------------------------
+    // ---- conversation id store -----------------------------------------
+    const CIDS_KEY = "mindful-chat-cids";
+    const ACTIVE_KEY = "mindful-chat-active-cid";
+
     function makeId() {
       if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
         return crypto.randomUUID();
       }
-      // Fallback for older browsers.
       return "cid-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
     }
-    const conversationId = (() => {
-      const k = "mindful-chat-cid";
+    function loadCids() {
       try {
-        let v = localStorage.getItem(k);
-        if (!v) {
-          v = makeId();
-          localStorage.setItem(k, v);
-        }
-        return v;
-      } catch {
-        return makeId();
-      }
-    })();
+        const raw = localStorage.getItem(CIDS_KEY);
+        if (raw) return JSON.parse(raw);
+      } catch {}
+      // Migrate from the legacy single-cid key, if present.
+      const legacy = localStorage.getItem("mindful-chat-cid");
+      return legacy ? [legacy] : [];
+    }
+    function saveCids(cids) {
+      try { localStorage.setItem(CIDS_KEY, JSON.stringify(cids)); } catch {}
+    }
+    function loadActive() {
+      try { return localStorage.getItem(ACTIVE_KEY) || ""; } catch { return ""; }
+    }
+    function saveActive(cid) {
+      try { localStorage.setItem(ACTIVE_KEY, cid); } catch {}
+    }
 
-    // ---- DOM refs --------------------------------------------------------
+    let cids = loadCids();
+    let activeCid = loadActive();
+    if (!cids.length) {
+      cids = [makeId()];
+      saveCids(cids);
+    }
+    if (!activeCid || !cids.includes(activeCid)) {
+      activeCid = cids[0];
+      saveActive(activeCid);
+    }
+
+    // ---- DOM refs ------------------------------------------------------
     const messagesEl = document.getElementById("messages");
     const formEl = document.getElementById("chat-form");
     const inputEl = document.getElementById("msg-input");
     const sendBtn = document.getElementById("send");
     const newChatBtn = document.getElementById("new-chat");
+    const convListEl = document.getElementById("conv-list");
+    const takeoverBadge = document.getElementById("takeover-badge");
 
-    // ---- helpers ---------------------------------------------------------
+    // ---- helpers -------------------------------------------------------
     function escapeHtml(s) {
       return String(s ?? "")
         .replace(/&/g, "&amp;")
@@ -74,7 +108,6 @@
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
     }
-
     function renderText(s) {
       let html = escapeHtml(s);
       html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
@@ -82,19 +115,24 @@
       html = html.replace(/\n/g, "<br />");
       return html;
     }
-
-    function appendMessage(role, text) {
+    function appendMessage(role, text, opts = {}) {
       const wrap = document.createElement("div");
       wrap.className = `msg msg--${role}`;
+      if (opts.fromReviewer) wrap.classList.add("msg--reviewer");
       const bubble = document.createElement("div");
       bubble.className = "bubble";
       bubble.innerHTML = renderText(text);
       wrap.appendChild(bubble);
+      if (opts.fromReviewer) {
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent = "from human reviewer";
+        wrap.appendChild(meta);
+      }
       messagesEl.appendChild(wrap);
       messagesEl.scrollTop = messagesEl.scrollHeight;
       return { wrap, bubble };
     }
-
     function appendStreamingBubble() {
       const wrap = document.createElement("div");
       wrap.className = "msg msg--assistant streaming";
@@ -109,8 +147,6 @@
       messagesEl.scrollTop = messagesEl.scrollHeight;
       return { wrap, bubble, meta };
     }
-
-    // Parse one SSE event block ("data: ...\n[event: ...\n]")
     function parseSseBlock(block) {
       const out = { event: "message", data: null };
       for (const rawLine of block.split("\n")) {
@@ -121,7 +157,9 @@
       return out;
     }
 
-    // ---- send loop -------------------------------------------------------
+    // ---- send loop -----------------------------------------------------
+    let lastSeenMsgId = 0;
+
     async function sendMessage(text) {
       appendMessage("user", text);
       const { wrap, bubble, meta } = appendStreamingBubble();
@@ -132,24 +170,21 @@
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ conversation_id: conversationId, message: text }),
+          body: JSON.stringify({ conversation_id: activeCid, message: text }),
         });
         if (!res.ok || !res.body) {
           bubble.textContent = `Request failed: ${res.status}`;
           return;
         }
-
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-
         const handleEvent = (block) => {
           if (!block.trim()) return;
           const { data } = parseSseBlock(block);
           if (!data) return;
           let payload;
           try { payload = JSON.parse(data); } catch { return; }
-
           if (payload.type === "token") {
             if (firstToken) {
               bubble.innerHTML = "";
@@ -173,21 +208,16 @@
             }
           }
         };
-
         while (true) {
           const { value, done } = await reader.read();
           if (value) buffer += decoder.decode(value, { stream: !done });
-
-          // SSE events are separated by a blank line.
           let idx;
           while ((idx = buffer.indexOf("\n\n")) !== -1) {
             const block = buffer.slice(0, idx);
             buffer = buffer.slice(idx + 2);
             handleEvent(block);
           }
-
           if (done) {
-            // Flush any trailing event that didn't have its blank line.
             if (buffer.trim()) handleEvent(buffer);
             buffer = "";
             break;
@@ -195,6 +225,10 @@
         }
       } catch (err) {
         bubble.textContent = `[Error] ${err}`;
+      } finally {
+        // Refresh lastSeenMsgId from server so polling doesn't redraw what we just sent.
+        await syncLastSeen();
+        refreshSidebar();
       }
     }
 
@@ -213,7 +247,6 @@
         inputEl.focus();
       }
     });
-
     inputEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -222,35 +255,130 @@
     });
 
     newChatBtn.addEventListener("click", () => {
-      const ok = confirm(
-        "Start a new conversation?\n\n" +
-        "Past messages will remain in the admin review log, but won't appear in this chat anymore."
-      );
-      if (!ok) return;
-      try { localStorage.setItem("mindful-chat-cid", makeId()); } catch {}
-      location.reload();
+      const fresh = makeId();
+      cids.unshift(fresh);
+      saveCids(cids);
+      switchTo(fresh);
     });
 
-    // Visible JS error reporting so future regressions don't disappear silently.
     window.addEventListener("error", (e) => {
       const msg = `[JS error] ${e.message} (${e.filename}:${e.lineno})`;
       appendMessage("system", msg);
     });
 
-    // ---- on load: hydrate past messages for this conversation -----------
-    (async function hydrateHistory() {
+    // ---- sidebar -------------------------------------------------------
+    async function refreshSidebar() {
+      let previews = [];
       try {
-        const res = await fetch(`/api/conversation/${encodeURIComponent(conversationId)}/messages`);
+        const res = await fetch("/api/conversations/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: cids }),
+        });
+        if (res.ok) previews = await res.json();
+      } catch {}
+      const byId = Object.fromEntries(previews.map((p) => [p.conversation_id, p]));
+      convListEl.innerHTML = cids.map((cid) => {
+        const p = byId[cid];
+        const isActive = cid === activeCid;
+        const label = p
+          ? `<span class="conv-preview">${escapeHtml(p.preview || "(empty)")}</span>
+             <span class="muted small">${p.message_count} msg${p.message_count === 1 ? "" : "s"}${p.highest_risk ? ` · <span class="risk risk--${escapeHtml(p.highest_risk)}">${escapeHtml(p.highest_risk)}</span>` : ""}</span>`
+          : `<span class="conv-preview muted"><em>New conversation</em></span>
+             <span class="muted small">no messages yet</span>`;
+        return `<li class="conv-item ${isActive ? "is-active" : ""}" data-cid="${escapeHtml(cid)}">
+          <button type="button" class="conv-pick">
+            ${label}
+          </button>
+        </li>`;
+      }).join("");
+    }
+
+    convListEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".conv-pick");
+      if (!btn) return;
+      const cid = btn.closest(".conv-item")?.dataset.cid;
+      if (!cid || cid === activeCid) return;
+      switchTo(cid);
+    });
+
+    function switchTo(cid) {
+      activeCid = cid;
+      saveActive(activeCid);
+      messagesEl.innerHTML = "";
+      lastSeenMsgId = 0;
+      hydrateHistory();
+      refreshSidebar();
+    }
+
+    // ---- hydration & polling -------------------------------------------
+    async function hydrateHistory() {
+      try {
+        const res = await fetch(`/api/conversation/${encodeURIComponent(activeCid)}/messages`);
         if (!res.ok) return;
         const items = await res.json();
         for (const m of items) {
           const role = m.role === "user" ? "user" : "assistant";
-          appendMessage(role, m.content);
+          const fromReviewer = m.risk_level === "human-reviewer";
+          appendMessage(role, m.content, { fromReviewer });
+          if (typeof m.id === "number" && m.id > lastSeenMsgId) lastSeenMsgId = m.id;
         }
-      } catch {
-        // silent — fresh chat is fine
+        updateTakeoverBadge(items);
+      } catch {}
+    }
+
+    async function syncLastSeen() {
+      try {
+        const res = await fetch(`/api/conversation/${encodeURIComponent(activeCid)}/messages`);
+        if (!res.ok) return;
+        const items = await res.json();
+        for (const m of items) {
+          if (typeof m.id === "number" && m.id > lastSeenMsgId) lastSeenMsgId = m.id;
+        }
+      } catch {}
+    }
+
+    function updateTakeoverBadge(items) {
+      // Show the badge if the most recent assistant message is from a reviewer.
+      let recentReviewer = false;
+      for (let i = items.length - 1; i >= 0; i--) {
+        if (items[i].role === "assistant") {
+          recentReviewer = items[i].risk_level === "human-reviewer";
+          break;
+        }
       }
-    })();
+      takeoverBadge.hidden = !recentReviewer;
+    }
+
+    async function pollNewMessages() {
+      try {
+        const res = await fetch(`/api/conversation/${encodeURIComponent(activeCid)}/messages`);
+        if (!res.ok) return;
+        const items = await res.json();
+        let appended = 0;
+        for (const m of items) {
+          if (typeof m.id !== "number" || m.id <= lastSeenMsgId) continue;
+          const role = m.role === "user" ? "user" : "assistant";
+          const fromReviewer = m.risk_level === "human-reviewer";
+          appendMessage(role, m.content, { fromReviewer });
+          lastSeenMsgId = m.id;
+          appended++;
+        }
+        if (appended) {
+          updateTakeoverBadge(items);
+          refreshSidebar();
+        }
+      } catch {}
+    }
+
+    setInterval(() => {
+      if (document.hidden) return;
+      pollNewMessages();
+    }, 4000);
+
+    // ---- boot ----------------------------------------------------------
+    hydrateHistory();
+    refreshSidebar();
   </script>
 </body>
 </html>

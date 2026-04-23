@@ -79,11 +79,59 @@ def conversation_messages(conversation_id: str, limit: int = 200) -> list[dict]:
     """All messages for a conversation, oldest first, with timestamps."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT role, content, risk_level, created_at FROM conversations "
+            "SELECT id, role, content, risk_level, created_at FROM conversations "
             "WHERE conversation_id = ? ORDER BY id ASC LIMIT ?",
             (conversation_id, limit),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def conversation_previews(conversation_ids: list[str]) -> list[dict]:
+    """Return summary info for the given conversation IDs.
+
+    Result preserves the input order for UI stability and skips IDs the server
+    has never seen (e.g., a freshly-created cid that has no messages yet).
+    """
+    if not conversation_ids:
+        return []
+    placeholders = ",".join("?" for _ in conversation_ids)
+    sql = f"""
+        SELECT
+            conversation_id,
+            COUNT(*) AS message_count,
+            MAX(created_at) AS last_message_at,
+            (SELECT content FROM conversations c2
+                WHERE c2.conversation_id = c1.conversation_id
+                ORDER BY id DESC LIMIT 1) AS last_message,
+            (SELECT role FROM conversations c2
+                WHERE c2.conversation_id = c1.conversation_id
+                ORDER BY id DESC LIMIT 1) AS last_role,
+            MAX(CASE WHEN risk_level IN ('low','medium','high')
+                THEN risk_level END) AS highest_risk
+        FROM conversations c1
+        WHERE conversation_id IN ({placeholders})
+        GROUP BY conversation_id
+    """
+    with get_conn() as conn:
+        rows = conn.execute(sql, conversation_ids).fetchall()
+    by_id = {r["conversation_id"]: dict(r) for r in rows}
+    out: list[dict] = []
+    for cid in conversation_ids:
+        r = by_id.get(cid)
+        if not r:
+            continue
+        preview = (r["last_message"] or "").strip().replace("\n", " ")
+        if len(preview) > 80:
+            preview = preview[:77] + "…"
+        out.append({
+            "conversation_id": cid,
+            "message_count": r["message_count"],
+            "last_message_at": r["last_message_at"],
+            "last_role": r["last_role"],
+            "preview": preview,
+            "highest_risk": r["highest_risk"],
+        })
+    return out
 
 
 def log_escalation(
