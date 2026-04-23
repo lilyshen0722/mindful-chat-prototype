@@ -41,6 +41,42 @@ deliverable of the framework.
 | Allocate resources to manage risk                     | Human-in-the-loop admin queue at `/admin` for reviewer follow-up             |
 | Document residual risk                                | "Known limitations" section below                                            |
 
+## Design philosophy: peer-like support, not crisis substitute
+
+A central design question for any "mindful" chatbot is: *should the AI guide
+the user through difficult feelings, or should it hand off to a human as
+soon as anything concerning appears?*
+
+This prototype takes a **tiered, peer-like-support stance** rather than an
+"escalate-and-stop" stance. The reasoning:
+
+- The vast majority of "negative" content in everyday chat is normal venting
+  — frustration with school, work, relationships, ordinary sadness. Pushing
+  crisis hotlines on these turns is dismissive, burns out human reviewers
+  with false-positive escalations, and discourages the user from continuing.
+- For genuinely concerning content, an immediate handoff that ends the
+  conversation can feel rejecting and may discourage the user from seeking
+  further help. Real systems (e.g., Crisis Text Line) use AI for *triage*
+  but trained humans for the actual crisis chat — but they keep the user
+  engaged, not bounced.
+- The AI is therefore designed to engage warmly across the full risk
+  spectrum, with the *intensity of resource mention* scaling with the
+  guardrail signal (NONE = none, LOW = none, MEDIUM = one soft mention,
+  HIGH = urgent + safety check). Outbound guardrail and the human-in-the-
+  loop admin queue provide the safety floor.
+
+The principle, encoded in the system prompt and enforced by tests:
+
+> The AI is **peer-like support**, not a substitute for crisis care. It
+> can listen, validate, and encourage talking to professionals. It must
+> NEVER diagnose, prescribe, suggest methods, or guide the user toward
+> harmful action.
+
+A more conservative design — "AI triages, humans take over" — is
+defensible and would be appropriate for any high-stakes deployment. For an
+educational prototype focused on the conversational guardrail pattern,
+the tiered approach is more instructive.
+
 ## Belmont alignment
 
 - **Beneficence ("do no harm").** The system errs on the side of redirecting
