@@ -308,6 +308,35 @@ tr.transcript-row td {
   background: #fbfaf6;
   padding: 0.75rem 1rem;
 }
+.transcript-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.transcript-header__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.cid-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-decoration: none;
+}
+.cid-link:hover code { text-decoration: underline; color: var(--accent); }
+.cid-link code { font-size: 0.85rem; }
 .esc-table .actions button.pause,
 .esc-table .actions button.resume {
   background: var(--info-bg);

@@ -116,7 +116,9 @@
           <td><span class="risk risk--${escapeHtml(r.risk_level)}">${escapeHtml(r.risk_level)}</span></td>
           <td>${escapeHtml(r.source)}</td>
           <td>
-            <code>${escapeHtml(r.conversation_id)}</code>
+            <button type="button" class="cid-link" data-cid="${escapeHtml(r.conversation_id)}" data-eid="${r.id}" title="Click to view this conversation">
+              <code>${escapeHtml(r.conversation_id)}</code>
+            </button>
             <div class="conv-state-line">${stateBadge}</div>
           </td>
           <td class="msg-cell">${escapeHtml(r.user_message)}</td>
@@ -135,7 +137,22 @@
       if (!res.ok) return null;
       return await res.json();
     }
-    function renderTranscript(items, cid) {
+    function renderTranscript(items, cid, state) {
+      const turnCount = items ? items.filter((m) => m.role === "user").length : 0;
+      const stateBadge = state === "human"
+        ? `<span class="state-badge state-badge--human">human reviewer engaged</span>`
+        : `<span class="state-badge state-badge--bot">bot active</span>`;
+      const header = `
+        <div class="transcript-header">
+          <div>
+            <div class="muted small">conversation</div>
+            <code>${escapeHtml(cid)}</code>
+          </div>
+          <div class="transcript-header__meta">
+            ${stateBadge}
+            <span class="muted small">${turnCount} user turn${turnCount === 1 ? "" : "s"} · ${items ? items.length : 0} message${items && items.length === 1 ? "" : "s"}</span>
+          </div>
+        </div>`;
       const list = (!items || items.length === 0)
         ? `<p class="muted">No messages found for this conversation.</p>`
         : `<ol class="transcript">${items.map((m) => {
@@ -162,7 +179,7 @@
             <span class="reviewer-hint muted small">Sending does not pause the bot. Use "Take over" first if you want the bot to stop replying.</span>
           </div>
         </form>`;
-      return list + composer;
+      return header + list + composer;
     }
 
     async function setConvState(cid, action) {
@@ -203,11 +220,11 @@
         if (await setConvState(resumeBtn.dataset.cid, "resume")) loadEscalations();
         return;
       }
-      const trBtn = e.target.closest("button.transcript");
-      if (trBtn) {
-        const eid = trBtn.dataset.eid;
-        const cid = trBtn.dataset.cid;
-        const parentRow = trBtn.closest("tr");
+      const trTrigger = e.target.closest("button.transcript, button.cid-link");
+      if (trTrigger) {
+        const eid = trTrigger.dataset.eid;
+        const cid = trTrigger.dataset.cid;
+        const parentRow = trTrigger.closest("tr");
         const existing = parentRow.nextElementSibling;
         if (existing && existing.classList.contains("transcript-row") && existing.dataset.eid === eid) {
           existing.remove();
@@ -215,12 +232,15 @@
         }
         // Remove any other open transcript rows first to keep things tidy.
         document.querySelectorAll("tr.transcript-row").forEach((n) => n.remove());
-        const items = await loadTranscript(cid);
+        const [items, stateRes] = await Promise.all([
+          loadTranscript(cid),
+          fetch(`/api/conversation/${encodeURIComponent(cid)}/state`).then((r) => r.ok ? r.json() : { state: "bot" }).catch(() => ({ state: "bot" })),
+        ]);
         const tr = document.createElement("tr");
         tr.className = "transcript-row";
         tr.dataset.eid = eid;
         tr.dataset.cid = cid;
-        tr.innerHTML = `<td colspan="9">${renderTranscript(items, cid)}</td>`;
+        tr.innerHTML = `<td colspan="9">${renderTranscript(items, cid, stateRes.state)}</td>`;
         parentRow.after(tr);
         return;
       }
@@ -250,8 +270,11 @@
         ta.value = "";
         // Re-render this transcript row in place with the new message.
         const transcriptCell = form.closest("tr.transcript-row")?.querySelector("td");
-        const items = await loadTranscript(cid);
-        if (transcriptCell) transcriptCell.innerHTML = renderTranscript(items, cid);
+        const [items, stateRes] = await Promise.all([
+          loadTranscript(cid),
+          fetch(`/api/conversation/${encodeURIComponent(cid)}/state`).then((r) => r.ok ? r.json() : { state: "bot" }).catch(() => ({ state: "bot" })),
+        ]);
+        if (transcriptCell) transcriptCell.innerHTML = renderTranscript(items, cid, stateRes.state);
       } finally {
         sendBtn.disabled = false;
         sendBtn.textContent = "Send as reviewer";
