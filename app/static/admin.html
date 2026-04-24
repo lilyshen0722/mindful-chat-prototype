@@ -99,10 +99,11 @@
         const status = r.acknowledged
           ? `acked by ${escapeHtml(r.acknowledged_by)} at ${escapeHtml(r.acknowledged_at)}`
           : "open";
-        const action = r.acknowledged
+        const ackBtn = r.acknowledged
           ? ""
           : `<button data-id="${r.id}" class="ack">Acknowledge</button>`;
-        return `<tr class="row row--${escapeHtml(r.risk_level)}">
+        const transcriptBtn = `<button data-cid="${escapeHtml(r.conversation_id)}" data-eid="${r.id}" class="transcript">Transcript</button>`;
+        return `<tr class="row row--${escapeHtml(r.risk_level)}" data-eid="${r.id}">
           <td>${r.id}</td>
           <td>${escapeHtml(r.created_at)}</td>
           <td><span class="risk risk--${escapeHtml(r.risk_level)}">${escapeHtml(r.risk_level)}</span></td>
@@ -111,25 +112,73 @@
           <td class="msg-cell">${escapeHtml(r.user_message)}</td>
           <td class="signals">${escapeHtml(r.matched_signals)}</td>
           <td>${status}</td>
-          <td>${action}</td>
+          <td class="actions">${ackBtn}${transcriptBtn}</td>
         </tr>`;
       }).join("");
     }
 
-    rowsEl.addEventListener("click", async (e) => {
-      const btn = e.target.closest("button.ack");
-      if (!btn) return;
-      const id = btn.dataset.id;
-      const notes = prompt("Optional reviewer notes:") || null;
-      const res = await fetch(`/api/admin/escalations/${id}/acknowledge`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
+    async function loadTranscript(cid) {
+      const res = await fetch(`/api/admin/conversations/${encodeURIComponent(cid)}/messages`, {
+        credentials: "same-origin",
+        cache: "no-store",
       });
-      if (res.ok) {
-        loadEscalations();
-      } else {
-        alert(`Acknowledge failed: ${res.status}`);
+      if (!res.ok) return null;
+      return await res.json();
+    }
+    function renderTranscript(items) {
+      if (!items || items.length === 0) {
+        return `<p class="muted">No messages found for this conversation.</p>`;
+      }
+      return `<ol class="transcript">${items.map((m) => {
+        const role = escapeHtml(m.role);
+        const cls = m.risk_level === "human-reviewer" ? "transcript-msg--reviewer" : `transcript-msg--${role}`;
+        const tag = m.risk_level === "human-reviewer" ? "human reviewer" : role;
+        const risk = (m.risk_level && m.risk_level !== "human-reviewer" && m.risk_level !== "none")
+          ? ` <span class="risk risk--${escapeHtml(m.risk_level)}">${escapeHtml(m.risk_level)}</span>`
+          : "";
+        return `<li class="transcript-msg ${cls}">
+          <div class="transcript-meta">
+            <strong>${escapeHtml(tag)}</strong>${risk}
+            <span class="muted small"> · ${escapeHtml(m.created_at)}</span>
+          </div>
+          <div class="transcript-body">${escapeHtml(m.content).replace(/\n/g, "<br />")}</div>
+        </li>`;
+      }).join("")}</ol>`;
+    }
+
+    rowsEl.addEventListener("click", async (e) => {
+      const ackBtn = e.target.closest("button.ack");
+      if (ackBtn) {
+        const id = ackBtn.dataset.id;
+        const notes = prompt("Optional reviewer notes:") || null;
+        const res = await fetch(`/api/admin/escalations/${id}/acknowledge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ notes }),
+        });
+        if (res.ok) loadEscalations();
+        else alert(`Acknowledge failed: ${res.status}`);
+        return;
+      }
+      const trBtn = e.target.closest("button.transcript");
+      if (trBtn) {
+        const eid = trBtn.dataset.eid;
+        const cid = trBtn.dataset.cid;
+        const parentRow = trBtn.closest("tr");
+        const existing = parentRow.nextElementSibling;
+        if (existing && existing.classList.contains("transcript-row") && existing.dataset.eid === eid) {
+          existing.remove();
+          return;
+        }
+        // Remove any other open transcript rows first to keep things tidy.
+        document.querySelectorAll("tr.transcript-row").forEach((n) => n.remove());
+        const items = await loadTranscript(cid);
+        const tr = document.createElement("tr");
+        tr.className = "transcript-row";
+        tr.dataset.eid = eid;
+        tr.innerHTML = `<td colspan="9">${renderTranscript(items)}</td>`;
+        parentRow.after(tr);
+        return;
       }
     });
 

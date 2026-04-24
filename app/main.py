@@ -226,3 +226,14 @@ def admin_acknowledge(
 ) -> dict:
     acknowledge_escalation(escalation_id, reviewer=user, notes=body.notes)
     return {"ok": True, "id": escalation_id}
+
+
+@app.get("/api/admin/conversations/{conversation_id}/messages")
+def admin_conversation_messages(
+    conversation_id: str,
+    _: str = Depends(admin_user),
+) -> list[dict]:
+    """Full transcript for a conversation. Auth-gated mirror of the public
+    endpoint so escalation reviewers can see surrounding context, not just
+    the single message that tripped the guardrail."""
+    return conversation_messages(conversation_id)

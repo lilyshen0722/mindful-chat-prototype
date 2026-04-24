@@ -290,6 +290,47 @@ a { color: var(--accent); }
 .row--medium { background: rgba(238, 150, 75, 0.06); }
 .row--divergence { background: rgba(156, 140, 199, 0.06); }
 
+.esc-table .actions { white-space: nowrap; }
+.esc-table .actions button { margin-right: 0.25rem; }
+.esc-table .actions button.transcript {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+}
+.esc-table .actions button.transcript:hover { background: #f3f1ea; }
+
+tr.transcript-row td {
+  background: #fbfaf6;
+  padding: 0.75rem 1rem;
+}
+.transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.transcript-msg {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 0.4rem;
+  background: #fff;
+  border: 1px solid var(--border);
+}
+.transcript-msg--user { background: #f4f2eb; }
+.transcript-msg--reviewer {
+  background: var(--info-bg);
+  border-color: var(--info-border);
+}
+.transcript-meta { margin-bottom: 0.2rem; }
+.transcript-body {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
 /* ============ Typing indicator ============ */
 .typing {
   display: inline-flex;
