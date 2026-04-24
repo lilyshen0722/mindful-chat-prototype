@@ -14,15 +14,19 @@ from pydantic import BaseModel, Field
 from .config import settings
 from .crisis_resources import CRISIS_MESSAGE, US_RESOURCES
 from .db import (
+    PAUSED_NOTICE,
     acknowledge_escalation,
     conversation_messages,
     conversation_previews,
+    get_conversation_state,
     init_db,
     list_escalations,
     log_divergence,
     log_escalation,
     recent_history,
     save_message,
+    save_reviewer_message,
+    set_conversation_state,
 )
 from .guardrail import GuardrailResult, RiskLevel, assess
 from .llm import LLMUnavailable, build_system_prompt, chat_stream
@@ -70,6 +74,10 @@ class PreviewRequest(BaseModel):
     ids: list[str] = Field(default_factory=list, max_length=200)
 
 
+class ReviewerMessageRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=4000)
+
+
 # ------------------------------------------------------------------ pages
 @app.get("/", response_class=HTMLResponse)
 def index() -> FileResponse:
@@ -90,6 +98,11 @@ def health() -> dict:
 def get_conversation_messages(conversation_id: str) -> list[dict]:
     """Return the visible message log for a conversation_id (oldest first)."""
     return conversation_messages(conversation_id)
+
+
+@app.get("/api/conversation/{conversation_id}/state")
+def get_conversation_state_endpoint(conversation_id: str) -> dict:
+    return {"state": get_conversation_state(conversation_id)}
 
 
 @app.post("/api/conversations/preview")
@@ -131,9 +144,42 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
     grafted softly only when the inbound message tripped the guardrail and
     the LLM did not include any resource on its own. The outbound guardrail
     can still replace the entire reply if the LLM produced unsafe content.
+
+    If a human reviewer has paused the conversation, the LLM is bypassed
+    entirely and the user gets a short notice that a human is engaged.
     """
     inbound: GuardrailResult = assess(req.message)
     save_message(req.conversation_id, "user", req.message, inbound.risk.value)
+
+    state = get_conversation_state(req.conversation_id)
+    if state == "human":
+        # Bot is paused — log inbound concern signals (so the reviewer still
+        # sees risk patterns) but do not invoke the LLM. The reviewer will
+        # respond out-of-band via the admin UI.
+        if inbound.risk != RiskLevel.NONE:
+            log_escalation(
+                req.conversation_id,
+                inbound,
+                req.message,
+                PAUSED_NOTICE,
+                source="input-while-paused",
+            )
+        save_message(req.conversation_id, "assistant", PAUSED_NOTICE, "none")
+
+        async def paused_generator():
+            yield _sse({"type": "token", "value": PAUSED_NOTICE})
+            yield _sse({
+                "type": "done",
+                "risk_level": inbound.risk.value,
+                "escalated": inbound.risk != RiskLevel.NONE,
+                "paused": True,
+            })
+
+        return StreamingResponse(
+            paused_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     history = recent_history(req.conversation_id, limit=10)
     system_prompt = build_system_prompt(inbound.risk)
@@ -237,3 +283,39 @@ def admin_conversation_messages(
     endpoint so escalation reviewers can see surrounding context, not just
     the single message that tripped the guardrail."""
     return conversation_messages(conversation_id)
+
+
+@app.post("/api/admin/conversations/{conversation_id}/pause")
+def admin_pause(
+    conversation_id: str,
+    user: str = Depends(admin_user),
+) -> dict:
+    set_conversation_state(conversation_id, "human", changed_by=user)
+    return {"ok": True, "state": "human"}
+
+
+@app.post("/api/admin/conversations/{conversation_id}/resume")
+def admin_resume(
+    conversation_id: str,
+    user: str = Depends(admin_user),
+) -> dict:
+    set_conversation_state(conversation_id, "bot", changed_by=user)
+    return {"ok": True, "state": "bot"}
+
+
+@app.post("/api/admin/conversations/{conversation_id}/message")
+def admin_send_reviewer_message(
+    conversation_id: str,
+    body: ReviewerMessageRequest,
+    user: str = Depends(admin_user),
+) -> dict:
+    """Inject a message from the human reviewer into the user's chat.
+
+    The user-facing chat polls the messages endpoint and renders messages with
+    risk_level='human-reviewer' in a distinct style with attribution. Sending
+    a reviewer message does not by itself pause the bot — pause/resume are
+    separate controls so the reviewer can choose to chime in alongside the
+    bot or fully take over.
+    """
+    msg_id = save_reviewer_message(conversation_id, body.content)
+    return {"ok": True, "id": msg_id, "by": user}

@@ -33,10 +33,23 @@ CREATE TABLE IF NOT EXISTS escalations (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS conversation_state (
+    conversation_id TEXT PRIMARY KEY,
+    state TEXT NOT NULL DEFAULT 'bot',
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    changed_by TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_escalations_acknowledged ON escalations(acknowledged);
 CREATE INDEX IF NOT EXISTS idx_escalations_created_at ON escalations(created_at);
 CREATE INDEX IF NOT EXISTS idx_conversations_conversation_id ON conversations(conversation_id);
 """
+
+REVIEWER_RISK_LABEL = "human-reviewer"
+PAUSED_NOTICE = (
+    "Your message was received. A human reviewer is engaged in this conversation "
+    "and will respond shortly. The automated bot has been paused for now."
+)
 
 
 def init_db() -> None:
@@ -180,13 +193,49 @@ def log_divergence(conversation_id: str, user_message: str, bot_response: str) -
 
 
 def list_escalations(unack_only: bool = False, limit: int = 200) -> list[dict]:
-    sql = "SELECT * FROM escalations"
+    sql = (
+        "SELECT e.*, COALESCE(s.state, 'bot') AS conversation_state "
+        "FROM escalations e "
+        "LEFT JOIN conversation_state s ON s.conversation_id = e.conversation_id"
+    )
     if unack_only:
-        sql += " WHERE acknowledged = 0"
-    sql += " ORDER BY created_at DESC LIMIT ?"
+        sql += " WHERE e.acknowledged = 0"
+    sql += " ORDER BY e.created_at DESC LIMIT ?"
     with get_conn() as conn:
         rows = conn.execute(sql, (limit,)).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_conversation_state(conversation_id: str) -> str:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT state FROM conversation_state WHERE conversation_id = ?",
+            (conversation_id,),
+        ).fetchone()
+    return row["state"] if row else "bot"
+
+
+def set_conversation_state(conversation_id: str, state: str, changed_by: str) -> None:
+    if state not in ("bot", "human"):
+        raise ValueError(f"invalid state: {state}")
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO conversation_state (conversation_id, state, changed_at, changed_by) "
+            "VALUES (?, ?, CURRENT_TIMESTAMP, ?) "
+            "ON CONFLICT(conversation_id) DO UPDATE SET "
+            "state = excluded.state, changed_at = CURRENT_TIMESTAMP, changed_by = excluded.changed_by",
+            (conversation_id, state, changed_by),
+        )
+
+
+def save_reviewer_message(conversation_id: str, content: str) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO conversations (conversation_id, role, content, risk_level) "
+            "VALUES (?, 'assistant', ?, ?)",
+            (conversation_id, content, REVIEWER_RISK_LABEL),
+        )
+        return cur.lastrowid
 
 
 def acknowledge_escalation(escalation_id: int, reviewer: str, notes: str | None) -> None:

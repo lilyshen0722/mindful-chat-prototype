@@ -99,20 +99,30 @@
         const status = r.acknowledged
           ? `acked by ${escapeHtml(r.acknowledged_by)} at ${escapeHtml(r.acknowledged_at)}`
           : "open";
+        const convState = r.conversation_state || "bot";
+        const stateBadge = convState === "human"
+          ? `<span class="state-badge state-badge--human">human reviewer engaged</span>`
+          : `<span class="state-badge state-badge--bot">bot active</span>`;
         const ackBtn = r.acknowledged
           ? ""
           : `<button data-id="${r.id}" class="ack">Acknowledge</button>`;
         const transcriptBtn = `<button data-cid="${escapeHtml(r.conversation_id)}" data-eid="${r.id}" class="transcript">Transcript</button>`;
-        return `<tr class="row row--${escapeHtml(r.risk_level)}" data-eid="${r.id}">
+        const takeoverBtn = convState === "human"
+          ? `<button data-cid="${escapeHtml(r.conversation_id)}" class="resume">Resume bot</button>`
+          : `<button data-cid="${escapeHtml(r.conversation_id)}" class="pause">Take over</button>`;
+        return `<tr class="row row--${escapeHtml(r.risk_level)}" data-eid="${r.id}" data-cid="${escapeHtml(r.conversation_id)}">
           <td>${r.id}</td>
           <td>${escapeHtml(r.created_at)}</td>
           <td><span class="risk risk--${escapeHtml(r.risk_level)}">${escapeHtml(r.risk_level)}</span></td>
           <td>${escapeHtml(r.source)}</td>
-          <td><code>${escapeHtml(r.conversation_id)}</code></td>
+          <td>
+            <code>${escapeHtml(r.conversation_id)}</code>
+            <div class="conv-state-line">${stateBadge}</div>
+          </td>
           <td class="msg-cell">${escapeHtml(r.user_message)}</td>
           <td class="signals">${escapeHtml(r.matched_signals)}</td>
           <td>${status}</td>
-          <td class="actions">${ackBtn}${transcriptBtn}</td>
+          <td class="actions">${ackBtn}${transcriptBtn}${takeoverBtn}</td>
         </tr>`;
       }).join("");
     }
@@ -125,25 +135,46 @@
       if (!res.ok) return null;
       return await res.json();
     }
-    function renderTranscript(items) {
-      if (!items || items.length === 0) {
-        return `<p class="muted">No messages found for this conversation.</p>`;
-      }
-      return `<ol class="transcript">${items.map((m) => {
-        const role = escapeHtml(m.role);
-        const cls = m.risk_level === "human-reviewer" ? "transcript-msg--reviewer" : `transcript-msg--${role}`;
-        const tag = m.risk_level === "human-reviewer" ? "human reviewer" : role;
-        const risk = (m.risk_level && m.risk_level !== "human-reviewer" && m.risk_level !== "none")
-          ? ` <span class="risk risk--${escapeHtml(m.risk_level)}">${escapeHtml(m.risk_level)}</span>`
-          : "";
-        return `<li class="transcript-msg ${cls}">
-          <div class="transcript-meta">
-            <strong>${escapeHtml(tag)}</strong>${risk}
-            <span class="muted small"> · ${escapeHtml(m.created_at)}</span>
+    function renderTranscript(items, cid) {
+      const list = (!items || items.length === 0)
+        ? `<p class="muted">No messages found for this conversation.</p>`
+        : `<ol class="transcript">${items.map((m) => {
+            const role = escapeHtml(m.role);
+            const cls = m.risk_level === "human-reviewer" ? "transcript-msg--reviewer" : `transcript-msg--${role}`;
+            const tag = m.risk_level === "human-reviewer" ? "human reviewer" : role;
+            const risk = (m.risk_level && m.risk_level !== "human-reviewer" && m.risk_level !== "none")
+              ? ` <span class="risk risk--${escapeHtml(m.risk_level)}">${escapeHtml(m.risk_level)}</span>`
+              : "";
+            return `<li class="transcript-msg ${cls}">
+              <div class="transcript-meta">
+                <strong>${escapeHtml(tag)}</strong>${risk}
+                <span class="muted small"> · ${escapeHtml(m.created_at)}</span>
+              </div>
+              <div class="transcript-body">${escapeHtml(m.content).replace(/\n/g, "<br />")}</div>
+            </li>`;
+          }).join("")}</ol>`;
+      const composer = `
+        <form class="reviewer-composer" data-cid="${escapeHtml(cid)}">
+          <label class="muted small">Send a message to this user as the human reviewer:</label>
+          <textarea class="reviewer-input" rows="2" placeholder="e.g. 'Hi, I'm a reviewer on this prototype. I want to make sure you're okay…'" required></textarea>
+          <div class="reviewer-actions">
+            <button type="submit" class="reviewer-send">Send as reviewer</button>
+            <span class="reviewer-hint muted small">Sending does not pause the bot. Use "Take over" first if you want the bot to stop replying.</span>
           </div>
-          <div class="transcript-body">${escapeHtml(m.content).replace(/\n/g, "<br />")}</div>
-        </li>`;
-      }).join("")}</ol>`;
+        </form>`;
+      return list + composer;
+    }
+
+    async function setConvState(cid, action) {
+      const res = await fetch(`/api/admin/conversations/${encodeURIComponent(cid)}/${action}`, {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      if (!res.ok) {
+        alert(`${action} failed: ${res.status}`);
+        return false;
+      }
+      return true;
     }
 
     rowsEl.addEventListener("click", async (e) => {
@@ -158,6 +189,18 @@
         });
         if (res.ok) loadEscalations();
         else alert(`Acknowledge failed: ${res.status}`);
+        return;
+      }
+      const pauseBtn = e.target.closest("button.pause");
+      if (pauseBtn) {
+        if (!confirm("Pause the automated bot for this conversation? Future user messages will only get a 'human reviewer engaged' notice until you resume.")) return;
+        if (await setConvState(pauseBtn.dataset.cid, "pause")) loadEscalations();
+        return;
+      }
+      const resumeBtn = e.target.closest("button.resume");
+      if (resumeBtn) {
+        if (!confirm("Resume the automated bot for this conversation? The bot will reply normally to future user messages.")) return;
+        if (await setConvState(resumeBtn.dataset.cid, "resume")) loadEscalations();
         return;
       }
       const trBtn = e.target.closest("button.transcript");
@@ -176,9 +219,42 @@
         const tr = document.createElement("tr");
         tr.className = "transcript-row";
         tr.dataset.eid = eid;
-        tr.innerHTML = `<td colspan="9">${renderTranscript(items)}</td>`;
+        tr.dataset.cid = cid;
+        tr.innerHTML = `<td colspan="9">${renderTranscript(items, cid)}</td>`;
         parentRow.after(tr);
         return;
+      }
+    });
+
+    rowsEl.addEventListener("submit", async (e) => {
+      const form = e.target.closest("form.reviewer-composer");
+      if (!form) return;
+      e.preventDefault();
+      const cid = form.dataset.cid;
+      const ta = form.querySelector(".reviewer-input");
+      const content = (ta.value || "").trim();
+      if (!content) return;
+      const sendBtn = form.querySelector(".reviewer-send");
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Sending…";
+      try {
+        const res = await fetch(`/api/admin/conversations/${encodeURIComponent(cid)}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+        });
+        if (!res.ok) {
+          alert(`Send failed: ${res.status}`);
+          return;
+        }
+        ta.value = "";
+        // Re-render this transcript row in place with the new message.
+        const transcriptCell = form.closest("tr.transcript-row")?.querySelector("td");
+        const items = await loadTranscript(cid);
+        if (transcriptCell) transcriptCell.innerHTML = renderTranscript(items, cid);
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.textContent = "Send as reviewer";
       }
     });
 

@@ -323,8 +323,8 @@
           appendMessage(role, m.content, { fromReviewer });
           if (typeof m.id === "number" && m.id > lastSeenMsgId) lastSeenMsgId = m.id;
         }
-        updateTakeoverBadge(items);
       } catch {}
+      refreshState();
     }
 
     async function syncLastSeen() {
@@ -338,16 +338,24 @@
       } catch {}
     }
 
-    function updateTakeoverBadge(items) {
-      // Show the badge if the most recent assistant message is from a reviewer.
-      let recentReviewer = false;
-      for (let i = items.length - 1; i >= 0; i--) {
-        if (items[i].role === "assistant") {
-          recentReviewer = items[i].risk_level === "human-reviewer";
-          break;
-        }
+    let conversationState = "bot";
+    function applyState(state) {
+      conversationState = state;
+      takeoverBadge.hidden = state !== "human";
+      const composerBtn = document.getElementById("send");
+      if (state === "human") {
+        composerBtn.title = "Bot is paused — your message goes to the human reviewer.";
+      } else {
+        composerBtn.title = "";
       }
-      takeoverBadge.hidden = !recentReviewer;
+    }
+    async function refreshState() {
+      try {
+        const res = await fetch(`/api/conversation/${encodeURIComponent(activeCid)}/state`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data && data.state) applyState(data.state);
+      } catch {}
     }
 
     async function pollNewMessages() {
@@ -364,16 +372,14 @@
           lastSeenMsgId = m.id;
           appended++;
         }
-        if (appended) {
-          updateTakeoverBadge(items);
-          refreshSidebar();
-        }
+        if (appended) refreshSidebar();
       } catch {}
     }
 
     setInterval(() => {
       if (document.hidden) return;
       pollNewMessages();
+      refreshState();
     }, 4000);
 
     // ---- boot ----------------------------------------------------------
