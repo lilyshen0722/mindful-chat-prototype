@@ -48,21 +48,26 @@ Measure, Manage. Each is reflected in concrete code or documentation choices:
   `tests/test_guardrail.py`. Every escalation is persisted to SQLite with
   the matched signals so future-me, an auditor, or a course TA can replay the
   triggers and check them against ground truth.
-- **Manage.** Two mitigation tiers are wired in: (a) any inbound message
-  classified MEDIUM or HIGH bypasses the LLM entirely and returns a templated
-  message containing crisis-line numbers; (b) the LLM's reply is itself
-  passed through the same detector, so a hallucinated unsafe response is
-  caught before reaching the user. Every escalation is logged for human
-  review on the `/admin` dashboard.
+- **Manage.** Five mitigation layers are wired in: (a) outbound checks
+  catch unsafe LLM replies and replace them with a safe template; (b) a
+  *divergence* logger flags cases where the rule-based detector said NONE
+  but the LLM raised crisis resources anyway, so reviewers can audit
+  policy-vs-behavior drift; (c) a multi-turn pattern detector elevates
+  tone when three consecutive distress signals appear; (d) every concern
+  signal is surfaced on `/admin` with full transcript drill-down; (e) the
+  reviewer can *take over* — pausing the LLM and chatting with the user
+  as a human, with a visible "human reviewer engaged" badge.
 
 The project also reflects two course-specific commitments. First, the
 Belmont principle of **beneficence** ("do no harm; maximize benefit") is the
-reason the system errs toward over-redirecting to human resources rather than
-trying to solve the user's distress with an LLM. Second, the course's
-repeated insistence that LLM output be treated as a *draft* — not as
-evidence — is encoded as a **human-in-the-loop review queue**: even
-conversations that are merely flagged LOW are written to the escalation log
-so a human can audit whether the bot's reply was appropriate.
+reason the AI is designed as *peer-like support* rather than a crisis
+substitute: it engages warmly across the full risk spectrum so users feel
+heard, while the intensity of resource mention scales with the guardrail
+signal and any genuine handoff goes to a human, not a hard cutoff. Second,
+the course's repeated insistence that LLM output be treated as a *draft*
+— not as evidence — is encoded as a **human-in-the-loop with active
+controls**: a reviewer can read the surrounding transcript, send messages
+to the user as a human, and pause the bot entirely.
 
 ## 3. Potential impact
 
@@ -97,9 +102,10 @@ This prototype's biggest known limitation is its **rule-based detector**.
 Regex patterns will miss oblique, coded, multilingual, or sarcastic
 expressions of distress, and they will fire on figurative language, song
 lyrics, and third-person discussions ("my friend says she wants to die").
-For a real deployment, the detector would need to be replaced by a trained
-classifier with audited training data, layered with an LLM judge, and
-periodically re-evaluated against fresh ground-truth labels. The project
-documents this explicitly in `docs/ethics-mapping.md` rather than hiding it.
-
-Word count: ~870.
+The pattern detector and divergence logger partially compensate, but the
+underlying matcher is still English-only and rule-bound. A real deployment
+would need a trained classifier, an LLM judge, and periodic re-evaluation
+against fresh labels. The takeover feature is intentionally minimal: no
+out-of-band reviewer notification, no SLA on response time, and no consent
+flow that explicitly tells the user up front that a human may join. Each
+limitation is documented in `docs/ethics-mapping.md` rather than hidden.

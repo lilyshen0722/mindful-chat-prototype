@@ -37,8 +37,9 @@ deliverable of the framework.
 
 | AI RMF expectation                                    | How this repo addresses it                                                   |
 |-------------------------------------------------------|------------------------------------------------------------------------------|
-| Prioritize and respond to risks based on impact       | Risk-aware system prompt makes the LLM more attentive on LOW/MEDIUM/HIGH; a soft 988 footer is appended only if the model omitted any resource; outbound guardrail still hard-replaces unsafe LLM output with the safe template |
-| Allocate resources to manage risk                     | Human-in-the-loop admin queue at `/admin` for reviewer follow-up             |
+| Prioritize and respond to risks based on impact       | Risk-aware system prompt makes the LLM more attentive on LOW/MEDIUM/HIGH; multi-turn pattern aggregation elevates tone when a single message wouldn't; a soft 988 footer is appended only if the model omitted any resource; outbound guardrail still hard-replaces unsafe LLM output with the safe template |
+| Allocate resources to manage risk                     | Human-in-the-loop admin queue at `/admin` plus active **takeover** controls — reviewer can pause the bot and inject messages directly into the conversation; the user sees a "human reviewer engaged" badge so the handoff is transparent |
+| Detect model-policy divergence                        | Even when the rule-based guardrail rates a turn NONE, if the LLM volunteered a crisis resource the event is logged as `source=divergence` so reviewers can audit drift between documented policy and model behavior |
 | Document residual risk                                | "Known limitations" section below                                            |
 
 ## Design philosophy: peer-like support, not crisis substitute
@@ -73,9 +74,31 @@ The principle, encoded in the system prompt and enforced by tests:
 > harmful action.
 
 A more conservative design — "AI triages, humans take over" — is
-defensible and would be appropriate for any high-stakes deployment. For an
-educational prototype focused on the conversational guardrail pattern,
-the tiered approach is more instructive.
+defensible and would be appropriate for any high-stakes deployment. The
+prototype actually supports both modes: by default the AI engages across
+all risk levels, but a reviewer can **pause the bot** for any conversation
+from the admin dashboard. While paused, the LLM is bypassed entirely and
+user messages get a short notice that a human is engaged; the reviewer can
+then chat directly with the user, and a "human reviewer engaged" badge
+makes the handoff visible. This means the *same artifact* can demonstrate
+the tiered-engagement design and the conservative triage-and-handoff
+design, depending on how a reviewer chooses to operate it.
+
+### When does AI guide vs. hand off? (Operational rules encoded in code)
+
+| Effective risk | AI behavior                                                | Human behavior                                                  |
+|----------------|------------------------------------------------------------|-----------------------------------------------------------------|
+| NONE           | Normal chat. **No** crisis resources, no admin queue noise.| Nothing — don't burn out reviewers on normal venting.           |
+| LOW            | Validate + one open question. Still no resources.          | Logged for review (input).                                      |
+| Pattern        | Tone elevated to MEDIUM (gentle resource mention).         | Logged separately (pattern source) — emerging concern.          |
+| MEDIUM         | Validate + one soft 988 mention. Stay engaged.             | Logged (input). Reviewer may take over if they choose.          |
+| HIGH           | Validate strongly + urgent 988 + safety check.             | Logged (input). Reviewer notified; common case for takeover.    |
+| Divergence     | Bot already gave the resource — no further action needed.  | Logged (divergence) — reviewer audits model drift, not the user.|
+
+The key invariant: **the AI must never guide the user toward a negative
+action.** The system prompt forbids naming methods of self-harm, and the
+outbound guardrail catches an unsafe model reply and replaces it with the
+safe template. If a hard handoff is needed, the reviewer pauses the bot.
 
 ## Belmont alignment
 
@@ -95,14 +118,32 @@ the tiered approach is more instructive.
 
 - **Human-in-the-loop.** Every escalation is logged and surfaced on a
   reviewer dashboard. The bot's output is treated as a *draft* (per the
-  course materials) — a human reviewer can audit it after the fact and is
-  notified at the moment of escalation.
+  course materials) — a human reviewer can audit it after the fact, is
+  notified at the moment of escalation, can drill into the full
+  surrounding transcript, and can actively intervene by pausing the bot
+  and chatting with the user directly. Reviewer messages are persisted
+  with a distinct `risk_level='human-reviewer'` marker for audit.
 - **Reproducibility.** The detector is rule-based and version-controlled, so
   any researcher can trace why a given message was classified the way it
   was. Tests cover each risk level.
 - **Transparency vs. protection.** The repo is private during the course,
   the SQLite database is local-only, and the `.env` file is gitignored —
   protecting any test data — while the code is fully transparent.
+
+## Multi-conversation context
+
+A single browser can hold multiple parallel conversations: the client
+keeps a list of `conversation_id`s in `localStorage` and the user can
+switch between them via a sidebar. This is intentional for two reasons.
+First, "New conversation" should not erase prior context — a user (and a
+reviewer) need to be able to refer back to earlier threads. Second, the
+prototype is single-user-per-browser by design: there is no `users`
+table, no account creation, no PII collected. A `conversation_id` is an
+opaque UUID generated client-side, which means the only thing the server
+can attribute to a "person" is a browser's view of localStorage. This is
+intentional and worth surfacing as both a privacy property (no PII) and
+a limitation (a real deployment with multi-device sync would need real
+identity, with all the data-handling obligations that brings).
 
 ## Known limitations
 

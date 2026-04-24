@@ -12,11 +12,15 @@ guardrail does NOT replace its replies. Instead it (a) detects language
 associated with distress or self-harm, (b) modulates the LLM's system prompt
 so it responds with the right tone for each turn (curious on LOW, validating
 + gently mentioning 988 on MEDIUM, urgent on HIGH), (c) softly appends
-crisis resources only if the model failed to mention any, and (d) routes
-every concern signal to a simulated administrator review queue so a
-human-in-the-loop can audit the system's behavior. The only path that
-overrides the model's reply is the outbound guardrail (when the model
-itself produces unsafe content), which falls back to a safe template.
+crisis resources only if the model failed to mention any, (d) flags
+*divergence* when the model volunteers crisis resources on a NONE-risk turn,
+(e) elevates tone when several consecutive turns show distress (multi-turn
+pattern aggregation), and (f) routes every concern signal to a simulated
+administrator review queue so a human-in-the-loop can audit, drill into the
+full transcript, and **take over** the conversation (pause the bot, chat
+with the user as a human reviewer). The only paths that override the
+model's reply are the outbound guardrail (replaces unsafe LLM content with
+a safe template) and an explicit reviewer pause.
 
 Built for **DSCI 305 (Spring 2026)** — final project on data/AI ethics.
 
@@ -37,21 +41,26 @@ documented in `docs/ethics-mapping.md`.
 ## Architecture
 
 ```
-┌──────────┐    ┌────────────────────────────────────────────────┐
-│ chat UI  │───▶│ FastAPI                                         │
-│ (HTML/JS)│◀───│  ├── /api/chat                                  │
-└──────────┘    │  │    1. inbound guardrail (rule-based)         │
-                │  │    2. if MEDIUM/HIGH → return crisis message │
-                │  │       and skip the LLM                       │
-                │  │    3. else → call OpenRouter (LLM)           │
-                │  │    4. outbound guardrail on LLM reply        │
-                │  │    5. log escalations to SQLite              │
-                │  ├── /admin (HTTP Basic)                        │
-                │  └── /api/admin/escalations                     │
-                └────────────────────────────────────────────────┘
-                              │
-                              ▼
-                       SQLite (./data/app.db)
+┌──────────┐    ┌──────────────────────────────────────────────────────────┐
+│ chat UI  │───▶│ FastAPI                                                   │
+│ (HTML/JS)│◀───│  ├── /api/chat (SSE)                                      │
+│ + sidebar│    │  │   1. inbound assess  +  multi-turn pattern assess     │
+│ + polling│    │  │   2. if state=human → bypass LLM, send notice         │
+│          │    │  │   3. else → call OpenRouter with risk-aware prompt    │
+│          │    │  │   4. outbound assess; replace unsafe replies          │
+│          │    │  │   5. log: input / pattern / output / divergence rows  │
+│          │    │  ├── /api/conversation/{cid}/messages, /state            │
+│          │    │  ├── /api/conversations/preview (sidebar)                │
+│          │    │  ├── /admin (HTTP Basic) + transcript drill-down         │
+│          │    │  └── /api/admin/conversations/{cid}/{pause|resume|message}│
+│          │    └──────────────────────────────────────────────────────────┘
+│          │                  │
+│          │                  ▼
+│          │   SQLite: conversations, escalations, conversation_state
+│          │
+│          │   The chat UI polls every 4s for new reviewer messages and
+│          │   conversation state, so a paused conversation surfaces a
+└──────────┘   "human reviewer engaged" badge to the user.
 ```
 
 See `docs/architecture.md` for a more detailed walkthrough.
@@ -94,19 +103,21 @@ pytest -q
 
 ```
 app/
-  main.py              FastAPI app + routes
-  guardrail.py         Rule-based crisis-language detector
-  llm.py               OpenRouter chat client + safety system prompt
+  main.py              FastAPI app + routes (chat, admin, takeover, switcher)
+  guardrail.py         Rule-based detector + multi-turn pattern aggregator
+  llm.py               OpenRouter chat client + risk-aware system prompts
   crisis_resources.py  Hotline numbers + canned safe response
-  db.py                SQLite schema + helpers
+  db.py                SQLite schema + helpers (conversations, escalations,
+                       conversation_state, divergence + reviewer logging)
   config.py            Env-driven settings
-  static/              Chat UI + admin dashboard (HTML/JS)
+  static/              Chat UI (sidebar + polling) + admin dashboard
+                       (transcript drill-down + take-over controls)
 docs/
   written-component.md NIST-RMF-aligned written deliverable (<1000 words)
   architecture.md      System diagram + dataflow
   ethics-mapping.md    Explicit framework mapping + known limits
 tests/
-  test_guardrail.py    Unit tests for the detector
+  test_guardrail.py    Unit tests for inbound + multi-turn detectors
 docker-compose.yml
 Dockerfile
 requirements.txt
