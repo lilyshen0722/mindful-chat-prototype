@@ -122,3 +122,30 @@ def assess(text: str) -> GuardrailResult:
                     highest = level
 
     return GuardrailResult(risk=highest, matched=matched)
+
+
+def assess_pattern(user_messages: list[str], threshold: int = 3) -> GuardrailResult:
+    """Detect emerging concern across multiple turns.
+
+    Single-message regex rules miss the case where someone is steadily venting
+    over several turns without ever using a clearly-flagged phrase, and rules
+    miss oblique buildup that only becomes meaningful in context. We treat
+    `threshold` consecutive non-NONE user messages as a MEDIUM-level pattern
+    so the system prompt elevates tone and the admin queue gets a heads-up.
+
+    The pattern never invents a HIGH tier on its own — HIGH is reserved for
+    explicit means/plan/time signals on a single message. Pattern caps at
+    MEDIUM by design: this is a soft early-warning, not an emergency call.
+    """
+    if len(user_messages) < threshold:
+        return GuardrailResult(risk=RiskLevel.NONE)
+    window = user_messages[-threshold:]
+    risks = [assess(m).risk for m in window]
+    if not all(r != RiskLevel.NONE for r in risks):
+        return GuardrailResult(risk=RiskLevel.NONE)
+    matched = [f"pattern:{threshold}-in-a-row:{','.join(r.value for r in risks)}"]
+    return GuardrailResult(risk=RiskLevel.MEDIUM, matched=matched)
+
+
+def merge_risk(a: RiskLevel, b: RiskLevel) -> RiskLevel:
+    return a if _LEVEL_RANK[a] >= _LEVEL_RANK[b] else b

@@ -28,7 +28,7 @@ from .db import (
     save_reviewer_message,
     set_conversation_state,
 )
-from .guardrail import GuardrailResult, RiskLevel, assess
+from .guardrail import GuardrailResult, RiskLevel, assess, assess_pattern, merge_risk
 from .llm import LLMUnavailable, build_system_prompt, chat_stream
 
 
@@ -151,6 +151,11 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
     inbound: GuardrailResult = assess(req.message)
     save_message(req.conversation_id, "user", req.message, inbound.risk.value)
 
+    history = recent_history(req.conversation_id, limit=10)
+    user_history = [h["content"] for h in history if h["role"] == "user"]
+    pattern: GuardrailResult = assess_pattern(user_history)
+    effective_risk: RiskLevel = merge_risk(inbound.risk, pattern.risk)
+
     state = get_conversation_state(req.conversation_id)
     if state == "human":
         # Bot is paused — log inbound concern signals (so the reviewer still
@@ -181,8 +186,7 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    history = recent_history(req.conversation_id, limit=10)
-    system_prompt = build_system_prompt(inbound.risk)
+    system_prompt = build_system_prompt(effective_risk)
 
     async def generator():
         parts: list[str] = []
@@ -216,13 +220,13 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
             full_reply = CRISIS_MESSAGE
             yield _sse({"type": "replace", "value": full_reply})
 
-        # Soft resource graft: only if inbound was concerning AND the LLM
-        # forgot to mention any resource. We do not replace its reply.
-        elif inbound.risk in (RiskLevel.MEDIUM, RiskLevel.HIGH) and not _mentions_resource(full_reply):
+        # Soft resource graft: only if effective risk was concerning AND the
+        # LLM forgot to mention any resource. We do not replace its reply.
+        elif effective_risk in (RiskLevel.MEDIUM, RiskLevel.HIGH) and not _mentions_resource(full_reply):
             full_reply += RESOURCE_FOOTER
             yield _sse({"type": "token", "value": RESOURCE_FOOTER})
 
-        # Always log inbound concern signals for the admin queue.
+        # Log this turn's inbound concern signals for the admin queue.
         if inbound.risk != RiskLevel.NONE:
             log_escalation(
                 req.conversation_id,
@@ -231,18 +235,39 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
                 full_reply,
                 source="input",
             )
-        # Divergence: rule-based guardrail says NONE but the model volunteered a
+        # Multi-turn pattern: log once per triggering turn, but only if this
+        # message wasn't already logged as input-level concern. The reviewer
+        # gets a separate row labeled source=pattern so it's clear what's new.
+        if pattern.risk != RiskLevel.NONE and inbound.risk == RiskLevel.NONE:
+            log_escalation(
+                req.conversation_id,
+                pattern,
+                req.message,
+                full_reply,
+                source="pattern",
+            )
+        # Divergence: effective risk says NONE but the model volunteered a
         # crisis resource anyway. The reviewer needs to see this — it's evidence
         # the LLM is broadening "crisis" beyond the documented policy.
-        elif not outbound.is_escalation and _mentions_resource(full_reply):
+        if (
+            effective_risk == RiskLevel.NONE
+            and not outbound.is_escalation
+            and _mentions_resource(full_reply)
+        ):
             log_divergence(req.conversation_id, req.message, full_reply)
 
-        save_message(req.conversation_id, "assistant", full_reply, inbound.risk.value)
+        save_message(req.conversation_id, "assistant", full_reply, effective_risk.value)
 
         yield _sse({
             "type": "done",
-            "risk_level": inbound.risk.value,
-            "escalated": inbound.risk != RiskLevel.NONE or outbound.is_escalation,
+            "risk_level": effective_risk.value,
+            "inbound_risk": inbound.risk.value,
+            "pattern_risk": pattern.risk.value,
+            "escalated": (
+                inbound.risk != RiskLevel.NONE
+                or pattern.risk != RiskLevel.NONE
+                or outbound.is_escalation
+            ),
         })
 
     return StreamingResponse(

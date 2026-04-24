@@ -5,7 +5,7 @@ deliberately benign descriptions of categories — not real-world slurs or
 specific instructions — and aim to verify the *category* is detected, not to
 catalogue every variant.
 """
-from app.guardrail import RiskLevel, assess
+from app.guardrail import RiskLevel, assess, assess_pattern, merge_risk
 
 
 def test_empty_message_is_none():
@@ -63,3 +63,34 @@ def test_low_does_not_block_llm():
     assert r.risk == RiskLevel.LOW
     assert not r.block_llm
     assert not r.is_escalation
+
+
+def test_pattern_requires_threshold_messages():
+    # Two LOW messages aren't enough to trip a pattern (default threshold=3).
+    r = assess_pattern(["I'm exhausted", "nothing matters"])
+    assert r.risk == RiskLevel.NONE
+
+
+def test_pattern_three_consecutive_low_elevates_to_medium():
+    r = assess_pattern([
+        "I'm exhausted",
+        "nothing matters anymore",
+        "I'm so tired",
+    ])
+    assert r.risk == RiskLevel.MEDIUM
+    assert any("pattern:" in m for m in r.matched)
+
+
+def test_pattern_breaks_on_neutral_message():
+    r = assess_pattern([
+        "I'm exhausted",
+        "what's a good study schedule?",  # neutral message resets the pattern
+        "I'm so tired",
+    ])
+    assert r.risk == RiskLevel.NONE
+
+
+def test_merge_risk_returns_higher():
+    assert merge_risk(RiskLevel.LOW, RiskLevel.MEDIUM) == RiskLevel.MEDIUM
+    assert merge_risk(RiskLevel.HIGH, RiskLevel.LOW) == RiskLevel.HIGH
+    assert merge_risk(RiskLevel.NONE, RiskLevel.NONE) == RiskLevel.NONE
