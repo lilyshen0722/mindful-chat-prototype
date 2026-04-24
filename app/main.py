@@ -157,6 +157,26 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
     effective_risk: RiskLevel = merge_risk(inbound.risk, pattern.risk)
 
     state = get_conversation_state(req.conversation_id)
+
+    # Log inbound + pattern concern signals synchronously, before any streaming
+    # starts. If the client disconnects mid-stream the SSE generator is
+    # cancelled and any code after `yield` never runs — so any reviewer-relevant
+    # signal that depends on the *user's* message must be logged here. Outbound
+    # and divergence checks remain in the generator because they need the full
+    # bot reply.
+    if state != "human" and inbound.risk != RiskLevel.NONE:
+        log_escalation(
+            req.conversation_id, inbound, req.message, None, source="input"
+        )
+    if (
+        state != "human"
+        and pattern.risk != RiskLevel.NONE
+        and merge_risk(inbound.risk, pattern.risk) != inbound.risk
+    ):
+        log_escalation(
+            req.conversation_id, pattern, req.message, None, source="pattern"
+        )
+
     if state == "human":
         # Bot is paused — log inbound concern signals (so the reviewer still
         # sees risk patterns) but do not invoke the LLM. The reviewer will
@@ -226,29 +246,9 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
             full_reply += RESOURCE_FOOTER
             yield _sse({"type": "token", "value": RESOURCE_FOOTER})
 
-        # Log this turn's inbound concern signals for the admin queue.
-        if inbound.risk != RiskLevel.NONE:
-            log_escalation(
-                req.conversation_id,
-                inbound,
-                req.message,
-                full_reply,
-                source="input",
-            )
-        # Multi-turn pattern: log once per triggering turn, but only if this
-        # message wasn't already logged as input-level concern. The reviewer
-        # gets a separate row labeled source=pattern so it's clear what's new.
-        if pattern.risk != RiskLevel.NONE and inbound.risk == RiskLevel.NONE:
-            log_escalation(
-                req.conversation_id,
-                pattern,
-                req.message,
-                full_reply,
-                source="pattern",
-            )
-        # Divergence: effective risk says NONE but the model volunteered a
-        # crisis resource anyway. The reviewer needs to see this — it's evidence
-        # the LLM is broadening "crisis" beyond the documented policy.
+        # Inbound + pattern were logged synchronously above (with bot_response
+        # left null). Divergence is the only inbound-correlated signal we can
+        # only resolve once we know what the bot actually said.
         if (
             effective_risk == RiskLevel.NONE
             and not outbound.is_escalation

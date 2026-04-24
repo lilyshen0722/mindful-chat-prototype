@@ -151,7 +151,7 @@ def log_escalation(
     conversation_id: str,
     result: GuardrailResult,
     user_message: str,
-    bot_response: str,
+    bot_response: str | None,
     source: str = "input",
 ) -> int:
     with get_conn() as conn:
