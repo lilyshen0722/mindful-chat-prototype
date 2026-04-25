@@ -79,10 +79,28 @@ prototype actually supports both modes: by default the AI engages across
 all risk levels, but a reviewer can **pause the bot** for any conversation
 from the admin dashboard. While paused, the LLM is bypassed entirely and
 user messages get a short notice that a human is engaged; the reviewer can
-then chat directly with the user, and a "human reviewer engaged" badge
-makes the handoff visible. This means the *same artifact* can demonstrate
-the tiered-engagement design and the conservative triage-and-handoff
-design, depending on how a reviewer chooses to operate it.
+then chat directly with the user. This means the *same artifact* can
+demonstrate the tiered-engagement design and the conservative
+triage-and-handoff design, depending on how a reviewer chooses to operate
+it.
+
+### Takeover transparency: hybrid attribution
+
+When a reviewer sends a message, it renders in the user's chat with the
+same bubble shape as a bot reply, *plus* (a) a small italic caption
+"answered by a human reviewer" beneath the bubble, and (b) a persistent
+"human reviewer engaged" badge in the chat header while the conversation
+is paused. The bubble shape is shared with the bot intentionally — the
+reviewer is "answering as the bot" so the user's mental model stays
+continuous — but the caption and header badge keep the handoff visible.
+
+A fully covert takeover (no caption, no badge) was rejected: it would
+violate the course's transparency principle and the Belmont commitment to
+respect for persons. A loud takeover with a distinct bubble color was
+also rejected because it makes the reviewer feel like a different system
+bolted on, which discourages reviewers from intervening at all. The
+hybrid keeps the audit trail honest while preserving conversational
+continuity.
 
 ### When does AI guide vs. hand off? (Operational rules encoded in code)
 

@@ -124,9 +124,13 @@
       bubble.innerHTML = renderText(text);
       wrap.appendChild(bubble);
       if (opts.fromReviewer) {
+        // Subtle per-message attribution. The conversation-level "human
+        // reviewer engaged" header badge carries the broader signal; this
+        // line keeps individual messages honest about origin without making
+        // the reviewer's bubble feel like a different system.
         const meta = document.createElement("div");
-        meta.className = "meta";
-        meta.textContent = "from human reviewer";
+        meta.className = "meta meta--reviewer";
+        meta.textContent = "answered by a human reviewer";
         wrap.appendChild(meta);
       }
       messagesEl.appendChild(wrap);

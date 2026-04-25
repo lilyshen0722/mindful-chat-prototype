@@ -199,10 +199,12 @@ a { color: var(--accent); }
   color: #2a2a2a;
   font-size: 0.85rem;
 }
-.msg--reviewer .bubble {
-  background: var(--info-bg);
-  border: 1px solid var(--info-border);
-  color: #1d3a78;
+/* Reviewer messages on the user side intentionally inherit normal assistant
+   bubble styling — the reviewer is "answering as the bot" so the bubble
+   shape stays consistent. The dedicated .meta--reviewer caption below the
+   bubble plus the conversation-level header badge carry the transparency. */
+.meta--reviewer {
+  font-style: italic;
 }
 .meta {
   font-size: 0.75rem;
