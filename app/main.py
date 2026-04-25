@@ -19,6 +19,7 @@ from .db import (
     conversation_messages,
     conversation_previews,
     get_conversation_state,
+    has_open_escalation_for_source,
     init_db,
     list_escalations,
     log_divergence,
@@ -172,6 +173,7 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
         state != "human"
         and pattern.risk != RiskLevel.NONE
         and merge_risk(inbound.risk, pattern.risk) != inbound.risk
+        and not has_open_escalation_for_source(req.conversation_id, "pattern")
     ):
         log_escalation(
             req.conversation_id, pattern, req.message, None, source="pattern"
@@ -248,11 +250,14 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
 
         # Inbound + pattern were logged synchronously above (with bot_response
         # left null). Divergence is the only inbound-correlated signal we can
-        # only resolve once we know what the bot actually said.
+        # only resolve once we know what the bot actually said. Deduped while
+        # an open divergence row exists for this cid so persistent model drift
+        # surfaces as one actionable item, not one row per turn.
         if (
             effective_risk == RiskLevel.NONE
             and not outbound.is_escalation
             and _mentions_resource(full_reply)
+            and not has_open_escalation_for_source(req.conversation_id, "divergence")
         ):
             log_divergence(req.conversation_id, req.message, full_reply)
 

@@ -171,6 +171,24 @@ def log_escalation(
         return cur.lastrowid
 
 
+def has_open_escalation_for_source(conversation_id: str, source: str) -> bool:
+    """Returns True if this cid already has an unacknowledged row from `source`.
+
+    Used to dedupe pattern and divergence rows: once a reviewer has been
+    notified that a conversation is in a concerning streak (or that the
+    model is volunteering crisis resources), repeating the same row on every
+    subsequent turn just buries the queue without adding signal. Acking the
+    row resets the dedup so a fresh occurrence can fire later.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM escalations WHERE conversation_id = ? AND source = ? "
+            "AND acknowledged = 0 LIMIT 1",
+            (conversation_id, source),
+        ).fetchone()
+    return row is not None
+
+
 def log_divergence(conversation_id: str, user_message: str, bot_response: str) -> int:
     # The model volunteered a crisis resource on a message the rule-based
     # guardrail rated NONE. That mismatch is what a human reviewer needs to see —
