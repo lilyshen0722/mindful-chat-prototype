@@ -367,6 +367,12 @@ a.open-conv:hover { background: #f3f1ea; }
 .admin-conv__chat .messages--admin {
   height: 60vh;
 }
+/* In the admin review view, swap left/right placement: the user is "the
+   other party" being supported (left), and the bot + reviewer messages are
+   "our side" (right). Colors are kept as-is so identity reads the same as
+   on the user's own screen. */
+.messages--admin .msg--user { align-items: flex-start; }
+.messages--admin .msg--assistant { align-items: flex-end; }
 .composer--admin button {
   padding: 0.6rem 1.1rem;
   border-radius: 8px;
