@@ -43,15 +43,30 @@ _LEVEL_RANK = {
 
 
 _I_AM = r"(?:i['’]?m|i\s+am)"  # contracted or non-contracted
+_INTENSIFIER = r"(?:so|really|quite|kind\s+of|kinda|pretty|very|super)\s+"
+_DISTRESS_ADJ = (
+    r"(?:tired|exhausted|hopeless|worthless|empty|numb|lost|alone|"
+    r"sad|depressed|down|lonely|miserable|isolated|broken|overwhelmed|"
+    r"hurting|defeated)"
+)
 
 LOW_PATTERNS = [
-    rf"\b{_I_AM}\s+(?:so\s+)?(?:tired|exhausted|hopeless|worthless|empty|numb|lost)\b",
+    # "I'm sad", "I am really down", "I'm kind of overwhelmed", etc.
+    rf"\b{_I_AM}\s+(?:{_INTENSIFIER})?{_DISTRESS_ADJ}\b",
+    # "I feel hopeless", "I feel so alone", "feeling really down today"
+    rf"\bi\s+feel\s+(?:{_INTENSIFIER})?{_DISTRESS_ADJ}\b",
+    rf"\bfeeling\s+(?:{_INTENSIFIER})?{_DISTRESS_ADJ}\b",
+    # "I can't keep going" / "I can't do this anymore"
     r"\bi\s+(?:can[’']?t|cannot)\s+(?:keep\s+going|do\s+this\s+anymore|take\s+(?:it|this)\s+anymore)\b",
+    # "no point in living", "no reason to try"
     r"\bno\s+(?:point|reason)\s+(?:in|to)\s+(?:living|going\s+on|trying)\b",
     r"\bnothing\s+matters\b",
     r"\bgive\s+up\s+on\s+(?:life|everything)\b",
     r"\bi\s+(?:hate|don[’']?t\s+want)\s+my\s+life\b",
-    r"\bi\s+feel\s+(?:so\s+)?(?:tired|exhausted|hopeless|worthless|empty|numb|lost|alone)\b",
+    # social isolation: "I don't have any friends", "I have no friends",
+    # "no friends at school", "no one to talk to", "no one understands me"
+    r"\b(?:i\s+don[’']?t\s+have\s+any\s+friends|i\s+have\s+no\s+friends|no\s+friends\s+at\s+(?:school|work|home))\b",
+    r"\bno\s+one\s+(?:to\s+talk\s+to|cares\s+about\s+me|understands\s+me|to\s+turn\s+to|gets\s+me)\b",
 ]
 
 MEDIUM_PATTERNS = [

@@ -65,6 +65,39 @@ def test_low_does_not_block_llm():
     assert not r.is_escalation
 
 
+def test_low_catches_sad_depressed_lonely_phrasings():
+    # These were missed by the original regex set; documented in
+    # docs/ethics-mapping.md as a known gap and patched iteratively.
+    cases = [
+        "feeling really down today, can you help me think of something funny?",
+        "I'm still quite sad, I don't have any friends at school",
+        "I am so depressed lately",
+        "I'm lonely and overwhelmed",
+        "I feel really down",
+        "I don't have any friends",
+        "no one understands me",
+        "I'm pretty broken right now",
+    ]
+    for text in cases:
+        r = assess(text)
+        assert r.risk == RiskLevel.LOW, f"expected LOW for {text!r}, got {r.risk.value} ({r.matched})"
+
+
+def test_neutral_phrasings_still_pass():
+    # Regression check — make sure the broader LOW patterns don't fire on
+    # normal conversation.
+    cases = [
+        "Hi can you suggest a good study schedule for finals?",
+        "Tell me a joke please",
+        "What's a good recipe for chili?",
+        "I am happy with the project",
+        "I feel great today",
+    ]
+    for text in cases:
+        r = assess(text)
+        assert r.risk == RiskLevel.NONE, f"unexpected {r.risk.value} for {text!r} ({r.matched})"
+
+
 def test_pattern_requires_threshold_messages():
     # Two LOW messages aren't enough to trip a pattern (default threshold=3).
     r = assess_pattern(["I'm exhausted", "nothing matters"])

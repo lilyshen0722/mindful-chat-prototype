@@ -172,7 +172,17 @@ expects "residual risk" to be acknowledged:
 1. **Rule-based detection is a starting point, not a clinical instrument.**
    It will miss oblique, coded, multilingual, or sarcastic expressions of
    distress. It will also fire on figurative speech, song lyrics, and
-   third-person discussion.
+   third-person discussion. The pattern set is patched iteratively when
+   reviewer audit surfaces a miss — for example, *"feeling really down
+   today"* and *"I don't have any friends at school"* were originally
+   classified NONE because the LOW pattern set only covered
+   `tired|exhausted|hopeless|...` adjectives and didn't include
+   `sad|depressed|down|lonely|isolated|overwhelmed|broken` or social
+   isolation phrasings. Each patch is paired with a regression test in
+   `tests/test_guardrail.py`. This iterative-discovery pattern is the
+   best a regex layer can offer; closing the loop is exactly why an
+   ML-classifier tier and an LLM-judge tier are listed as required for
+   any real deployment.
 2. **English-only.** All patterns and the canned safe template are in
    English. Non-English speakers are at risk of being missed.
 3. **No trained classifier or LLM judge tier.** A production system should
