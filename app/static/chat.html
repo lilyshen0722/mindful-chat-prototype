@@ -189,18 +189,27 @@
           if (!data) return;
           let payload;
           try { payload = JSON.parse(data); } catch { return; }
-          if (payload.type === "token") {
+          if (payload.type === "user_saved" || payload.type === "assistant_saved") {
+            // Server tells us the id it gave the message we just exchanged.
+            // Advance the polling cursor so pollNewMessages doesn't re-render
+            // bubbles that are already on screen.
+            if (typeof payload.id === "number" && payload.id > lastSeenMsgId) {
+              lastSeenMsgId = payload.id;
+            }
+          } else if (payload.type === "token") {
             if (firstToken) {
               bubble.innerHTML = "";
               wrap.classList.remove("streaming");
               firstToken = false;
             }
             accumulated += payload.value;
-            bubble.innerHTML = renderText(accumulated);
+            // Trim leading whitespace so models that emit "\n\n…" up front
+            // don't render as a blank line at the top of the bubble.
+            bubble.innerHTML = renderText(accumulated.replace(/^\s+/, ""));
             messagesEl.scrollTop = messagesEl.scrollHeight;
           } else if (payload.type === "replace") {
             accumulated = payload.value;
-            bubble.innerHTML = renderText(accumulated);
+            bubble.innerHTML = renderText(accumulated.replace(/^\s+/, ""));
             wrap.classList.remove("streaming");
             firstToken = false;
           } else if (payload.type === "done") {

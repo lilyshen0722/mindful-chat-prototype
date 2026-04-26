@@ -160,7 +160,7 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
     entirely and the user gets a short notice that a human is engaged.
     """
     inbound: GuardrailResult = assess(req.message)
-    save_message(req.conversation_id, "user", req.message, inbound.risk.value)
+    user_msg_id = save_message(req.conversation_id, "user", req.message, inbound.risk.value)
 
     history = recent_history(req.conversation_id, limit=10)
     user_history = [h["content"] for h in history if h["role"] == "user"]
@@ -201,10 +201,17 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
                 PAUSED_NOTICE,
                 source="input-while-paused",
             )
-        save_message(req.conversation_id, "assistant", PAUSED_NOTICE, "none")
+        asst_msg_id = save_message(
+            req.conversation_id, "assistant", PAUSED_NOTICE, "none"
+        )
 
         async def paused_generator():
+            # Tell the client what ids their just-saved messages got, so the
+            # polling loop can advance lastSeenMsgId without re-rendering
+            # bubbles that are already on screen.
+            yield _sse({"type": "user_saved", "id": user_msg_id})
             yield _sse({"type": "token", "value": PAUSED_NOTICE})
+            yield _sse({"type": "assistant_saved", "id": asst_msg_id})
             yield _sse({
                 "type": "done",
                 "risk_level": inbound.risk.value,
@@ -221,6 +228,9 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
     system_prompt = build_system_prompt(effective_risk)
 
     async def generator():
+        # Tell the client what id their just-saved message got, so polling
+        # can advance lastSeenMsgId and not re-render the optimistic bubble.
+        yield _sse({"type": "user_saved", "id": user_msg_id})
         parts: list[str] = []
         try:
             async for token in chat_stream(history, system_prompt):
@@ -271,8 +281,11 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
         ):
             log_divergence(req.conversation_id, req.message, full_reply)
 
-        save_message(req.conversation_id, "assistant", full_reply, effective_risk.value)
+        asst_msg_id = save_message(
+            req.conversation_id, "assistant", full_reply, effective_risk.value
+        )
 
+        yield _sse({"type": "assistant_saved", "id": asst_msg_id})
         yield _sse({
             "type": "done",
             "risk_level": effective_risk.value,

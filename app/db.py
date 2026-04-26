@@ -69,13 +69,14 @@ def get_conn() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
-def save_message(conversation_id: str, role: str, content: str, risk_level: str) -> None:
+def save_message(conversation_id: str, role: str, content: str, risk_level: str) -> int:
     with get_conn() as conn:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO conversations (conversation_id, role, content, risk_level) "
             "VALUES (?, ?, ?, ?)",
             (conversation_id, role, content, risk_level),
         )
+        return cur.lastrowid
 
 
 def recent_history(conversation_id: str, limit: int = 10) -> list[dict[str, str]]:
