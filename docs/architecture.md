@@ -41,12 +41,13 @@
                 │ conversation_state │◀── pause/resume/send via admin API
                 │     (sqlite)       │             │
                 └─────────┬──────────┘             ▼
-                          │              ┌────────────────────────┐
-                          │              │ /admin dashboard       │
-                          │              │ HTTP Basic auth        │
-                          └─── read ────▶│ list + transcript +    │ ── reviewer
-                                         │ ack/notes + take over  │   (human-in-the-loop)
-                                         └────────────────────────┘
+                          │              ┌──────────────────────────────┐
+                          │              │ /admin dashboard             │
+                          │              │ HTTP Basic auth              │
+                          └─── read ────▶│ list + ack/notes + take over │ ── reviewer
+                                         │ + /admin/conversations/{cid} │   (human-in-the-loop)
+                                         │   chat-style focused view    │
+                                         └──────────────────────────────┘
 ```
 
 **Key design choices.**

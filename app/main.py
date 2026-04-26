@@ -90,6 +90,16 @@ def admin_page() -> FileResponse:
     return FileResponse(STATIC_DIR / "admin.html")
 
 
+@app.get("/admin/conversations/{conversation_id}", response_class=HTMLResponse)
+def admin_conversation_page(conversation_id: str) -> FileResponse:
+    """Chat-style view of a single conversation for the reviewer.
+
+    Note: this route serves the static HTML; the API calls it makes are
+    auth-gated, so the page itself is harmless without credentials.
+    """
+    return FileResponse(STATIC_DIR / "admin-conversation.html")
+
+
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -313,6 +323,15 @@ def admin_conversation_messages(
     endpoint so escalation reviewers can see surrounding context, not just
     the single message that tripped the guardrail."""
     return conversation_messages(conversation_id)
+
+
+@app.get("/api/admin/conversations/{conversation_id}/escalations")
+def admin_conversation_escalations(
+    conversation_id: str,
+    _: str = Depends(admin_user),
+) -> list[dict]:
+    """All escalation rows for a single conversation (for the focused view)."""
+    return [r for r in list_escalations(unack_only=False, limit=500) if r["conversation_id"] == conversation_id]
 
 
 @app.post("/api/admin/conversations/{conversation_id}/pause")

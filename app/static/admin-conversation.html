@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conversation — Admin</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body class="admin-body">
+  <header class="banner banner--info">
+    <strong>Reviewer view.</strong> You are seeing this conversation as a
+    human-in-the-loop reviewer. Pausing the bot stops it from generating new
+    replies; sending a message inserts a reply that the user sees attributed
+    as "answered by a human reviewer".
+  </header>
+
+  <main class="admin-conv">
+    <header class="admin-conv__header">
+      <div class="admin-conv__back">
+        <a href="/admin">← All escalations</a>
+      </div>
+      <div class="admin-conv__id">
+        <div class="muted small">conversation</div>
+        <code id="conv-id"></code>
+      </div>
+      <div class="admin-conv__meta">
+        <span id="state-badge" class="state-badge state-badge--bot">bot active</span>
+        <span id="turn-count" class="muted small"></span>
+      </div>
+      <div class="admin-conv__controls">
+        <button id="toggle-state" type="button" class="btn-secondary">Take over</button>
+      </div>
+    </header>
+
+    <section class="admin-conv__layout">
+      <div class="admin-conv__chat">
+        <div id="messages" class="messages messages--admin" aria-live="polite"></div>
+        <form id="reviewer-form" class="composer composer--admin">
+          <textarea id="reviewer-input" rows="2" placeholder="Send a message to this user as the reviewer…" required></textarea>
+          <button type="submit" id="reviewer-send">Send as reviewer</button>
+        </form>
+        <p class="muted small">
+          Sending does not pause the bot. Use <strong>Take over</strong> first
+          if you want the bot to stop replying.
+        </p>
+      </div>
+      <aside class="admin-conv__side" aria-label="Escalations for this conversation">
+        <h2>Escalations</h2>
+        <ul id="esc-list" class="esc-list"></ul>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const cid = decodeURIComponent(location.pathname.replace(/^\/admin\/conversations\//, ""));
+    document.getElementById("conv-id").textContent = cid;
+
+    const messagesEl = document.getElementById("messages");
+    const stateBadge = document.getElementById("state-badge");
+    const turnCount = document.getElementById("turn-count");
+    const toggleBtn = document.getElementById("toggle-state");
+    const escList = document.getElementById("esc-list");
+    const reviewerForm = document.getElementById("reviewer-form");
+    const reviewerInput = document.getElementById("reviewer-input");
+    const reviewerSend = document.getElementById("reviewer-send");
+
+    let lastSeenMsgId = 0;
+    let currentState = "bot";
+
+    function escapeHtml(s) {
+      return String(s ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+    function renderText(s) {
+      let html = escapeHtml(s);
+      html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      html = html.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+      html = html.replace(/\n/g, "<br />");
+      return html;
+    }
+    function appendMessage(m) {
+      const role = m.role === "user" ? "user" : "assistant";
+      const fromReviewer = m.risk_level === "human-reviewer";
+      const wrap = document.createElement("div");
+      wrap.className = `msg msg--${role}`;
+      if (fromReviewer) wrap.classList.add("msg--reviewer");
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.innerHTML = renderText(m.content);
+      wrap.appendChild(bubble);
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const ts = m.created_at ? `<span class="muted small">${escapeHtml(m.created_at)}</span>` : "";
+      const tags = [];
+      if (fromReviewer) {
+        tags.push(`<span class="meta--reviewer">human reviewer</span>`);
+      } else if (role === "assistant") {
+        tags.push(`<span class="muted small">bot</span>`);
+      }
+      if (m.risk_level && !["none", "human-reviewer"].includes(m.risk_level)) {
+        tags.push(`<span class="risk risk--${escapeHtml(m.risk_level)}">${escapeHtml(m.risk_level)}</span>`);
+      }
+      meta.innerHTML = [...tags, ts].filter(Boolean).join(" · ");
+      wrap.appendChild(meta);
+      messagesEl.appendChild(wrap);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    async function loadAll() {
+      try {
+        const [msgs, stateRes, escs] = await Promise.all([
+          fetch(`/api/admin/conversations/${encodeURIComponent(cid)}/messages`, { credentials: "same-origin", cache: "no-store" }),
+          fetch(`/api/conversation/${encodeURIComponent(cid)}/state`, { cache: "no-store" }),
+          fetch(`/api/admin/conversations/${encodeURIComponent(cid)}/escalations`, { credentials: "same-origin", cache: "no-store" }),
+        ]);
+        if (msgs.status === 401) {
+          messagesEl.innerHTML = '<p class="muted">Not authorized. Refresh and re-enter admin credentials.</p>';
+          return;
+        }
+        const msgList = msgs.ok ? await msgs.json() : [];
+        const stateData = stateRes.ok ? await stateRes.json() : { state: "bot" };
+        const escList_ = escs.ok ? await escs.json() : [];
+
+        renderState(stateData.state);
+        renderTurnCount(msgList);
+        renderEscalations(escList_);
+
+        // Append only new messages so we don't flicker / lose scroll
+        const newOnes = msgList.filter((m) => typeof m.id === "number" && m.id > lastSeenMsgId);
+        if (newOnes.length === msgList.length) {
+          messagesEl.innerHTML = "";
+        }
+        for (const m of newOnes) {
+          appendMessage(m);
+          lastSeenMsgId = m.id;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function renderState(state) {
+      currentState = state;
+      stateBadge.textContent = state === "human" ? "human reviewer engaged" : "bot active";
+      stateBadge.className = `state-badge state-badge--${state === "human" ? "human" : "bot"}`;
+      toggleBtn.textContent = state === "human" ? "Resume bot" : "Take over";
+      toggleBtn.dataset.action = state === "human" ? "resume" : "pause";
+    }
+    function renderTurnCount(msgs) {
+      const turns = msgs.filter((m) => m.role === "user").length;
+      turnCount.textContent = `${turns} user turn${turns === 1 ? "" : "s"} · ${msgs.length} message${msgs.length === 1 ? "" : "s"}`;
+    }
+    function renderEscalations(rows) {
+      if (!rows.length) {
+        escList.innerHTML = '<li class="muted small">No escalations on this conversation.</li>';
+        return;
+      }
+      escList.innerHTML = rows.map((r) => {
+        const status = r.acknowledged
+          ? `<span class="muted small">acked by ${escapeHtml(r.acknowledged_by)}</span>`
+          : `<button type="button" class="ack-mini" data-id="${r.id}">Ack</button>`;
+        return `<li class="esc-list__item esc-list__item--${escapeHtml(r.risk_level)}">
+          <div>
+            <span class="risk risk--${escapeHtml(r.risk_level)}">${escapeHtml(r.risk_level)}</span>
+            <span class="muted small">${escapeHtml(r.source)} · ${escapeHtml(r.created_at)}</span>
+          </div>
+          <div class="esc-list__msg">${escapeHtml((r.user_message || "").slice(0, 120))}</div>
+          <div class="esc-list__status">${status}</div>
+        </li>`;
+      }).join("");
+    }
+
+    toggleBtn.addEventListener("click", async () => {
+      const action = toggleBtn.dataset.action;
+      const verb = action === "pause" ? "Pause the automated bot" : "Resume the automated bot";
+      if (!confirm(`${verb} for this conversation?`)) return;
+      const res = await fetch(`/api/admin/conversations/${encodeURIComponent(cid)}/${action}`, {
+        method: "POST", credentials: "same-origin",
+      });
+      if (!res.ok) { alert(`${action} failed: ${res.status}`); return; }
+      loadAll();
+    });
+
+    reviewerForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const content = (reviewerInput.value || "").trim();
+      if (!content) return;
+      reviewerSend.disabled = true;
+      reviewerSend.textContent = "Sending…";
+      try {
+        const res = await fetch(`/api/admin/conversations/${encodeURIComponent(cid)}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content }),
+          credentials: "same-origin",
+        });
+        if (!res.ok) { alert(`Send failed: ${res.status}`); return; }
+        reviewerInput.value = "";
+        loadAll();
+      } finally {
+        reviewerSend.disabled = false;
+        reviewerSend.textContent = "Send as reviewer";
+      }
+    });
+
+    escList.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button.ack-mini");
+      if (!btn) return;
+      const id = btn.dataset.id;
+      const notes = prompt("Optional reviewer notes:") || null;
+      const res = await fetch(`/api/admin/escalations/${id}/acknowledge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+      if (res.ok) loadAll();
+      else alert(`Acknowledge failed: ${res.status}`);
+    });
+
+    loadAll();
+    setInterval(() => { if (!document.hidden) loadAll(); }, 4000);
+  </script>
+</body>
+</html>

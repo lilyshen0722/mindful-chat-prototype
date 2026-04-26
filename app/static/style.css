@@ -306,32 +306,8 @@ a { color: var(--accent); }
 }
 .esc-table .actions button.transcript:hover { background: #f3f1ea; }
 
-tr.transcript-row td {
-  background: #fbfaf6;
-  padding: 0.75rem 1rem;
-}
-.transcript-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  padding: 0.5rem 0.75rem;
-  margin-bottom: 0.5rem;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.transcript-header__meta {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
 .cid-link {
-  background: transparent;
-  border: none;
-  padding: 0;
+  display: inline-block;
   cursor: pointer;
   color: inherit;
   font: inherit;
@@ -339,6 +315,123 @@ tr.transcript-row td {
 }
 .cid-link:hover code { text-decoration: underline; color: var(--accent); }
 .cid-link code { font-size: 0.85rem; }
+
+a.open-conv {
+  display: inline-block;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  text-decoration: none;
+  margin-right: 0.25rem;
+}
+a.open-conv:hover { background: #f3f1ea; }
+
+/* ============ Admin: focused conversation view ============ */
+.admin-conv {
+  max-width: 1100px;
+  margin: 1.5rem auto;
+  padding: 0 1rem 2rem;
+}
+.admin-conv__header {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+.admin-conv__back a {
+  text-decoration: none;
+  color: var(--accent);
+}
+.admin-conv__id code {
+  font-size: 0.85rem;
+}
+.admin-conv__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+.admin-conv__layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 1rem;
+}
+.admin-conv__chat .messages--admin {
+  height: 60vh;
+}
+.composer--admin button {
+  padding: 0.6rem 1.1rem;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+  cursor: pointer;
+}
+.composer--admin button:disabled { opacity: 0.6; cursor: progress; }
+
+.admin-conv__side {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  height: fit-content;
+  position: sticky;
+  top: 1rem;
+}
+.admin-conv__side h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+}
+.esc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.esc-list__item {
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  margin-bottom: 0.4rem;
+  background: #fbfaf6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.esc-list__item--high { background: rgba(193, 55, 75, 0.08); }
+.esc-list__item--medium { background: rgba(238, 150, 75, 0.08); }
+.esc-list__item--divergence { background: rgba(156, 140, 199, 0.08); }
+.esc-list__msg {
+  font-size: 0.85rem;
+  word-wrap: break-word;
+}
+.esc-list__status .ack-mini {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+@media (max-width: 720px) {
+  .admin-conv__layout { grid-template-columns: 1fr; }
+  .admin-conv__side { position: static; }
+  .admin-conv__header {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+}
 .esc-table .actions button.pause,
 .esc-table .actions button.resume {
   background: var(--info-bg);

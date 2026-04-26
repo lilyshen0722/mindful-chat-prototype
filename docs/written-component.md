@@ -54,7 +54,7 @@ Measure, Manage. Each is reflected in concrete code or documentation choices:
   but the LLM raised crisis resources anyway, so reviewers can audit
   policy-vs-behavior drift; (c) a multi-turn pattern detector elevates
   tone when three consecutive distress signals appear; (d) every concern
-  signal is surfaced on `/admin` with full transcript drill-down; (e) the
+  signal is surfaced on `/admin` plus a per-conversation chat-style review page; (e) the
   reviewer can *take over* — pausing the LLM and chatting with the user
   as a human, with a visible "human reviewer engaged" badge.
 
@@ -66,7 +66,7 @@ heard, while the intensity of resource mention scales with the guardrail
 signal and any genuine handoff goes to a human, not a hard cutoff. Second,
 the course's repeated insistence that LLM output be treated as a *draft*
 — not as evidence — is encoded as a **human-in-the-loop with active
-controls**: a reviewer can read the surrounding transcript, send messages
+controls**: a reviewer can open any conversation in a chat-style review page, send messages
 to the user as a human, and pause the bot entirely.
 
 ## 3. Potential impact

@@ -137,8 +137,9 @@ safe template. If a hard handoff is needed, the reviewer pauses the bot.
 - **Human-in-the-loop.** Every escalation is logged and surfaced on a
   reviewer dashboard. The bot's output is treated as a *draft* (per the
   course materials) — a human reviewer can audit it after the fact, is
-  notified at the moment of escalation, can drill into the full
-  surrounding transcript, and can actively intervene by pausing the bot
+  notified at the moment of escalation, can open any conversation in a
+  chat-style focused review page (`/admin/conversations/{cid}`), and can
+  actively intervene by pausing the bot
   and chatting with the user directly. Reviewer messages are persisted
   with a distinct `risk_level='human-reviewer'` marker for audit.
 - **Reproducibility.** The detector is rule-based and version-controlled, so

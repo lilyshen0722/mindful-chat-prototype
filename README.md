@@ -16,9 +16,9 @@ crisis resources only if the model failed to mention any, (d) flags
 *divergence* when the model volunteers crisis resources on a NONE-risk turn,
 (e) elevates tone when several consecutive turns show distress (multi-turn
 pattern aggregation), and (f) routes every concern signal to a simulated
-administrator review queue so a human-in-the-loop can audit, drill into the
-full transcript, and **take over** the conversation (pause the bot, chat
-with the user as a human reviewer). The only paths that override the
+administrator review queue so a human-in-the-loop can audit, open any
+conversation in a chat-style review page, and **take over** (pause the
+bot, send messages as the reviewer). The only paths that override the
 model's reply are the outbound guardrail (replaces unsafe LLM content with
 a safe template) and an explicit reviewer pause.
 
@@ -51,7 +51,7 @@ documented in `docs/ethics-mapping.md`.
 │          │    │  │   5. log: input / pattern / output / divergence rows  │
 │          │    │  ├── /api/conversation/{cid}/messages, /state            │
 │          │    │  ├── /api/conversations/preview (sidebar)                │
-│          │    │  ├── /admin (HTTP Basic) + transcript drill-down         │
+│          │    │  ├── /admin + /admin/conversations/{cid} (HTTP Basic)    │
 │          │    │  └── /api/admin/conversations/{cid}/{pause|resume|message}│
 │          │    └──────────────────────────────────────────────────────────┘
 │          │                  │
@@ -111,7 +111,7 @@ app/
                        conversation_state, divergence + reviewer logging)
   config.py            Env-driven settings
   static/              Chat UI (sidebar + polling) + admin dashboard
-                       (transcript drill-down + take-over controls)
+                       + per-conversation chat-style review page
 docs/
   written-component.md NIST-RMF-aligned written deliverable (<1000 words)
   architecture.md      System diagram + dataflow
