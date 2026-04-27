@@ -247,13 +247,29 @@ the threat-model entry where applicable.
    multilingual, or sarcastic expressions of distress. It will also
    fire on figurative speech, song lyrics, and third-person discussion.
    The pattern set is patched iteratively when reviewer audit surfaces a
-   miss — for example, *"feeling really down today"* and *"I don't have
-   any friends at school"* were originally classified NONE because the
-   LOW pattern set only covered `tired|exhausted|hopeless|...` and
-   didn't include `sad|depressed|down|lonely|isolated|overwhelmed|broken`
-   or social-isolation phrasings. Each patch is paired with a regression
-   test in `tests/test_guardrail.py`. The ML tier (item 3 below) closes
-   some of these gaps; an LLM-judge tier would close more.
+   miss. Two examples worth recording (each paired with a regression
+   test in `tests/test_guardrail.py`):
+   - **LOW gap:** *"feeling really down today"* and *"I don't have
+     any friends at school"* were originally classified NONE because
+     the LOW pattern set only covered `tired|exhausted|hopeless|...`
+     and didn't include `sad|depressed|down|lonely|isolated|overwhelmed|broken`
+     or social-isolation phrasings.
+   - **MEDIUM gap:** *"I want to end all of this"* and *"by 'ending
+     this', I really mean it, put an end to everything"* were missed
+     because the MEDIUM regex only covered `end my life` / `end it all`,
+     not the broader euphemistic family `end (everything | all of this | this all)`
+     or the `put an end to ...` paraphrase. The ML tier *also* missed
+     these — go_emotions rates "I want to end everything" as `desire`
+     (≈0.80), which is correctly excluded from our distress label set
+     because it would over-trigger on benign wants. Owning euphemistic
+     ideation in regex is the disciplined fix; an LLM-judge tier would
+     handle these natively.
+
+   Each patch is paired with a regression test plus a *negative*
+   regression test confirming benign uses ("end this conversation",
+   "put an end to my subscription") still classify NONE. The ML tier
+   (item 3 below) closes some LOW-tier gaps; an LLM-judge tier would
+   close more, especially the euphemistic-MEDIUM family.
 2. **English-only.** All patterns, the LLM system prompt, and the canned
    safe template are in English. Non-English speakers are at risk of
    being missed at every tier — the regex doesn't match, the GoEmotions

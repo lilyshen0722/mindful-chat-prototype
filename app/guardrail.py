@@ -73,12 +73,19 @@ MEDIUM_PATTERNS = [
     r"\b(?:want|wish|wanting|wishing)\s+(?:to|i\s+(?:could|was|were))\s+(?:die|be\s+dead|disappear|not\s+exist)\b",
     r"\bsuicid(?:e|al)\b",
     r"\bkill(?:ing)?\s+myself\b",
-    r"\bend(?:ing)?\s+(?:my\s+life|it\s+all)\b",
+    # "end my life", "ending it all", "end everything", "end all of this",
+    # "put an end to everything", "put an end to all of this", etc.
+    # Euphemistic phrasings of self-termination — go_emotions rates these
+    # as 'desire' rather than sadness, so the regex must own this category.
+    r"\b(?:end(?:ing)?|put\s+an\s+end\s+to)\s+(?:my\s+life|it\s+all|everything|all\s+of\s+this|this\s+all|all\s+this)\b",
     r"\bself[-\s]?harm\b",
     r"\bhurt(?:ing)?\s+myself\b",
     r"\bcut(?:ting)?\s+myself\b",
     r"\bdon[’']?t\s+want\s+to\s+(?:be\s+(?:here|alive)|live)\b",
     r"\bbetter\s+off\s+(?:without\s+me|dead)\b",
+    # "I can't go on", "I can't keep living" — passive ideation phrasings
+    # that don't quite match the LOW "can't keep going" rule.
+    r"\bi\s+(?:can[’']?t|cannot)\s+(?:go\s+on|keep\s+living|live\s+like\s+this)\b",
 ]
 
 HIGH_PATTERNS = [

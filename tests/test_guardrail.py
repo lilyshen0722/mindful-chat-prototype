@@ -38,6 +38,36 @@ def test_medium_explicit_keyword():
     assert r.block_llm
 
 
+def test_medium_catches_euphemistic_end_phrasings():
+    # These were missed in an actual user conversation: the regex only
+    # caught "end my life" / "end it all" but not "end all of this",
+    # "put an end to everything", or the contextualized "ending this".
+    # go_emotions also misses these — it rates them as 'desire'.
+    cases = [
+        "I want to end all of this",
+        "I want to put an end to everything",
+        "by 'ending this', I really mean it, put an end to everything",
+        "I just want to end it all tonight",
+        "I can't go on like this",
+        "I cannot keep living this way",
+    ]
+    for text in cases:
+        r = assess(text)
+        assert r.risk == RiskLevel.MEDIUM, f"expected MEDIUM for {text!r}, got {r.risk.value} ({r.matched})"
+
+
+def test_medium_phrasings_dont_overtrigger():
+    # Make sure the broader MEDIUM patterns don't fire on benign uses.
+    cases = [
+        "Let me end this conversation, thanks for the help",
+        "I want to end this lecture early",
+        "How do I put an end to my subscription?",
+    ]
+    for text in cases:
+        r = assess(text)
+        assert r.risk == RiskLevel.NONE, f"unexpected {r.risk.value} for {text!r} ({r.matched})"
+
+
 def test_high_plan_plus_means():
     r = assess("I have the pills and I'm going to use them.")
     assert r.risk == RiskLevel.HIGH
