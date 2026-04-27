@@ -71,16 +71,19 @@
 
 ## Components
 
-| File                         | Responsibility                                                  |
-|------------------------------|-----------------------------------------------------------------|
-| `app/main.py`                | FastAPI routes; orchestrates guardrail → LLM → guardrail → DB.  |
-| `app/guardrail.py`           | Rule-based crisis-language detector. Returns `RiskLevel`.       |
-| `app/llm.py`                 | OpenRouter HTTP client + safety system prompt.                  |
-| `app/crisis_resources.py`    | Hotline list and the canned safe response template.             |
-| `app/db.py`                  | SQLite schema + helpers (save / log / list / acknowledge).      |
-| `app/config.py`              | `pydantic-settings`-driven env config.                          |
-| `app/static/chat.html`       | User-facing chat UI with persistent crisis banner.              |
-| `app/static/admin.html`      | Reviewer-facing dashboard for the escalation queue.             |
+| File                                       | Responsibility                                                  |
+|--------------------------------------------|-----------------------------------------------------------------|
+| `app/main.py`                              | FastAPI routes; orchestrates regex → ML → pattern → LLM → outbound → DB. |
+| `app/guardrail.py`                         | Rule-based detector + multi-turn `assess_pattern`. Returns `RiskLevel`. |
+| `app/ml_classifier.py`                     | Second-tier emotion classifier (`SamLowe/roberta-base-go_emotions`); lazy load + fail open. |
+| `app/llm.py`                               | OpenRouter HTTP client + risk-aware system prompts.             |
+| `app/crisis_resources.py`                  | Hotline list and the canned safe response template.             |
+| `app/db.py`                                | SQLite schema + helpers (save / log / list / acknowledge / state / dedup). |
+| `app/config.py`                            | `pydantic-settings`-driven env config.                          |
+| `app/static/chat.html`                     | User-facing chat UI: sidebar, polling, takeover badge, crisis banner. |
+| `app/static/admin.html`                    | Reviewer-facing dashboard for the escalation queue.             |
+| `app/static/admin-conversation.html`       | Per-conversation chat-style review page with takeover controls. |
+| `app/static/style.css`                     | Shared CSS for both the user and reviewer surfaces.             |
 
 ## Why a single FastAPI service
 
@@ -131,8 +134,60 @@ pipeline fired the alert:
 | Reviewer pauses the bot          | `/api/chat` skips the LLM and emits a single notice token; user-side polling renders the takeover badge. |
 | Admin credentials wrong          | `401` with `WWW-Authenticate: Basic` header.                            |
 
+## API surface
+
+Public (no auth):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/` | Chat UI |
+| GET | `/api/health` | Liveness probe |
+| POST | `/api/chat` | SSE-streamed chat. Emits `user_saved`, `token`, `replace`, `assistant_saved`, `done` events. |
+| GET | `/api/conversation/{cid}/messages` | Full message log for a cid (oldest first) |
+| GET | `/api/conversation/{cid}/state` | `{state: "bot" \| "human"}` |
+| POST | `/api/conversations/preview` | Sidebar previews for a list of cids |
+
+Admin (HTTP Basic):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/admin` | Escalation dashboard (list view) |
+| GET | `/admin/conversations/{cid}` | Per-conversation chat-style review page |
+| GET | `/api/admin/escalations` | All escalation rows |
+| POST | `/api/admin/escalations/{id}/acknowledge` | Mark acked + reviewer + notes |
+| GET | `/api/admin/conversations/{cid}/messages` | Auth-gated mirror of public messages endpoint |
+| GET | `/api/admin/conversations/{cid}/escalations` | Escalations for a single cid |
+| POST | `/api/admin/conversations/{cid}/pause` | Set state to `human` |
+| POST | `/api/admin/conversations/{cid}/resume` | Set state to `bot` |
+| POST | `/api/admin/conversations/{cid}/message` | Inject reviewer message into the conversation |
+
 ## Local deployment
 
 Docker Compose runs a single `api` service, mounts `./data` as `/data` in
-the container so the SQLite file survives restarts, and reads secrets from a
-local `.env` file that is gitignored.
+the container so the SQLite file survives restarts, and reads secrets from
+a local `.env` file that is gitignored. The Dockerfile pre-downloads the
+HuggingFace classifier weights at build time so the first request doesn't
+incur a cold-start penalty and so a build fails loud if the upstream model
+becomes unavailable.
+
+Image size after the ML tier was added: ~2.5 GB (PyTorch CPU build +
+transformers + classifier weights). To run regex-only with a smaller
+footprint, set `ENABLE_ML_CLASSIFIER=false` in `.env` (image size still
+includes torch, but inference is skipped at runtime). A future build
+optimization could move the ML tier into a separate optional Compose
+service.
+
+## Configuration
+
+See `.env.example` for the full list. Key env vars:
+
+| Variable | Default | Effect |
+|---|---|---|
+| `OPENROUTER_API_KEY` | *(required)* | OpenRouter key |
+| `OPENROUTER_MODEL` | `nvidia/nemotron-nano-9b-v2:free` | LLM model id |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `change-me-locally` | Admin Basic auth |
+| `HOST_PORT` | `8000` | Host port mapped to the container |
+| `ENABLE_ML_CLASSIFIER` | `true` | Toggle the second-tier classifier |
+| `ML_CLASSIFIER_MODEL` | `SamLowe/roberta-base-go_emotions` | HF model id |
+| `ML_CLASSIFIER_THRESHOLD` | `0.4` | Distress-label score threshold |
+| `ML_CLASSIFIER_MIN_WORDS` | `4` | Skip classifier on very short messages |

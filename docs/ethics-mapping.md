@@ -2,9 +2,28 @@
 
 This file documents how the prototype maps onto the **NIST AI Risk
 Management Framework (AI RMF 1.0, 2023)** and onto the course's recurring
-Belmont / human-in-the-loop themes. It also documents the prototype's known
-limitations, because honesty about failure modes is itself a required
-deliverable of the framework.
+Belmont / human-in-the-loop themes. It also documents the prototype's
+known limitations, because honesty about failure modes is itself a
+required deliverable of the framework.
+
+For the *concrete* failure surface (specific threats, mitigations,
+residual risks), see `docs/threat-model.md`. For *how to operate* the
+prototype, see `docs/user-guide.md`. For the *required course
+deliverable* (audience / framework / impact, < 1000 words), see
+`docs/written-component.md`.
+
+## Rubric crosswalk
+
+The DSCI 305 final-project rubric has five criteria. This is where each
+is addressed in the artifact:
+
+| Rubric criterion | Where it lives in this repo |
+|---|---|
+| **Problem / Question (20%)** | `docs/written-component.md` §1 ("Problem & motivation"); `README.md` opening paragraphs frame the problem as "how should an LLM chatbot handle disclosed distress, and how do you know it's doing so safely?" |
+| **Framework Application (25%)** | This file — function-by-function NIST AI RMF mapping below; Belmont alignment; course-themes section. `docs/threat-model.md` makes the *Map* function concrete. The hard-cap design of the ML tier (LOW only, never MEDIUM/HIGH) is itself a framework-driven choice and is documented in the "Second-tier emotion classifier" section. |
+| **Execution / Quality (30%)** | `app/` source code; `tests/test_guardrail.py`; the iterative commit history (each new mitigation paired with a smoke test). `docs/architecture.md` documents the layering. |
+| **Impact / Utility (15%)** | `docs/written-component.md` §3; "What this is and is not" section of `README.md`; the prototype runs offline with `ENABLE_ML_CLASSIFIER=true` and no ongoing API cost beyond the LLM, which is the relevant property for a campus deployment. |
+| **Documentation (10%)** | `README.md`, `docs/user-guide.md`, `docs/architecture.md`, this file, `docs/threat-model.md`, `docs/written-component.md`. Each commit message explains the *why*, not just the *what*. |
 
 ## NIST AI RMF — function-by-function mapping
 
@@ -23,15 +42,15 @@ deliverable of the framework.
 |-------------------------------------------------------|------------------------------------------------------------------------------|
 | Establish and understand the context                  | "What this is and is not" section of `README.md`                             |
 | Categorize the AI system                              | Documented as a high-stakes-domain *prototype*, not a deployable service     |
-| Identify potential risks and impacts                  | "Limitations" sections in this file and in `written-component.md`            |
+| Identify potential risks and impacts                  | `docs/threat-model.md` (T1–T11) plus the "Limitations" section in this file |
 
 ### Measure
 
 | AI RMF expectation                                    | How this repo addresses it                                                   |
 |-------------------------------------------------------|------------------------------------------------------------------------------|
-| Identify appropriate methods and metrics              | Risk levels NONE / LOW / MEDIUM / HIGH; tests assert each level              |
-| Track AI risk through measurement and assessment      | Every escalation persisted with matched signals; admin dashboard exposes them |
-| Track regression                                      | `tests/test_guardrail.py` catches regressions in pattern matching            |
+| Identify appropriate methods and metrics              | Risk levels NONE / LOW / MEDIUM / HIGH; per-tier signal sources (`input` / `ml-classifier` / `pattern` / `output` / `divergence`) so each tier's contribution is separately measurable |
+| Track AI risk through measurement and assessment      | Every escalation persisted with matched signals (regex matches *and* per-label ML scores); admin dashboard + per-conversation review page expose the audit trail |
+| Track regression                                      | `tests/test_guardrail.py` (15 tests) covers each detector tier and pins regressions for previously-missed phrasings (e.g., "feeling really down today"); pinned ML model weights mean classifier behavior stays comparable across runs |
 
 ### Manage
 
@@ -220,34 +239,66 @@ against fresh ground-truth audited by clinical reviewers.
 ## Known limitations
 
 These are intentionally documented (not buried) because the framework
-expects "residual risk" to be acknowledged:
+expects "residual risk" to be acknowledged. Each numbered item links to
+the threat-model entry where applicable.
 
-1. **Rule-based detection is a starting point, not a clinical instrument.**
-   It will miss oblique, coded, multilingual, or sarcastic expressions of
-   distress. It will also fire on figurative speech, song lyrics, and
-   third-person discussion. The pattern set is patched iteratively when
-   reviewer audit surfaces a miss — for example, *"feeling really down
-   today"* and *"I don't have any friends at school"* were originally
-   classified NONE because the LOW pattern set only covered
-   `tired|exhausted|hopeless|...` adjectives and didn't include
-   `sad|depressed|down|lonely|isolated|overwhelmed|broken` or social
-   isolation phrasings. Each patch is paired with a regression test in
-   `tests/test_guardrail.py`. This iterative-discovery pattern is the
-   best a regex layer can offer; closing the loop is exactly why an
-   ML-classifier tier and an LLM-judge tier are listed as required for
-   any real deployment.
-2. **English-only.** All patterns and the canned safe template are in
-   English. Non-English speakers are at risk of being missed.
-3. **No trained classifier or LLM judge tier.** A production system should
-   layer at least one ML classifier and an LLM judge on top of the rule
-   set, then re-evaluate against fresh ground-truth labels periodically.
-4. **No abuse / red-team testing in code.** The prototype documents the
-   need for red-teaming but does not ship adversarial test cases.
-5. **HTTP Basic admin auth is for local demos only.** Any real deployment
-   would need real auth, audit logs, and TLS.
-6. **OpenRouter is a third-party processor.** Anything sent to the chat
-   endpoint reaches OpenRouter and the chosen upstream model. The README
-   names the model so a reviewer can assess that processor's terms.
+1. **Rule-based detection is a starting point, not a clinical
+   instrument** *(threat-model T2)*. It will miss oblique, coded,
+   multilingual, or sarcastic expressions of distress. It will also
+   fire on figurative speech, song lyrics, and third-person discussion.
+   The pattern set is patched iteratively when reviewer audit surfaces a
+   miss — for example, *"feeling really down today"* and *"I don't have
+   any friends at school"* were originally classified NONE because the
+   LOW pattern set only covered `tired|exhausted|hopeless|...` and
+   didn't include `sad|depressed|down|lonely|isolated|overwhelmed|broken`
+   or social-isolation phrasings. Each patch is paired with a regression
+   test in `tests/test_guardrail.py`. The ML tier (item 3 below) closes
+   some of these gaps; an LLM-judge tier would close more.
+2. **English-only.** All patterns, the LLM system prompt, and the canned
+   safe template are in English. Non-English speakers are at risk of
+   being missed at every tier — the regex doesn't match, the GoEmotions
+   classifier was trained on English Reddit, and the LLM's safety prompt
+   is English. Internationalization is real work, not a translation
+   pass.
+3. **The ML classifier inherits its training data's biases.** The
+   second-tier classifier (`SamLowe/roberta-base-go_emotions`) was
+   trained on the GoEmotions dataset, which is Reddit comments labeled
+   by crowd workers. That distribution is younger, more US-centric,
+   more Anglophone, and more "online vernacular" than the general
+   population a campus chat tool would serve. The classifier may
+   underperform on phrasings that don't look like Reddit. We mitigate
+   this by *capping* its impact at LOW (it can never elevate to MEDIUM
+   or HIGH) and by surfacing per-label scores in `matched_signals` so a
+   reviewer can audit decisions; we do not pretend it's clinically
+   validated.
+4. **No clinical-corpus classifier; no LLM-judge tier.** A production
+   deployment would add a classifier fine-tuned on a curated
+   mental-health corpus (e.g., CLPsych) audited by clinicians, plus an
+   LLM-judge third tier for borderline cases. Those are listed as
+   future work in the architecture doc.
+5. **No red-team / adversarial test cases shipped.** The prototype
+   documents the need for red-teaming (and the course materials cite it
+   as a discipline) but does not ship adversarial test cases. A future
+   contributor should add a `tests/test_adversarial.py` covering jailbreak
+   prompts, multi-turn manipulation, and known crisis-vocabulary
+   evasions.
+6. **HTTP Basic admin auth is for local demos only** *(threat-model T5,
+   T8)*. Any real deployment would need real auth (SSO / OIDC), audit
+   logs of reviewer actions, TLS, and CSRF protection.
+7. **OpenRouter is a third-party processor** *(threat-model T6)*.
+   Anything sent to the chat endpoint reaches OpenRouter and the chosen
+   upstream model. The README and `.env.example` name the model so a
+   reviewer can assess that processor's terms before any deployment.
+8. **No notification channel for reviewers.** The admin dashboard
+   auto-refreshes, but there is no email, Slack, paging, or SLA.
+   Reviewer attention is a human factor not addressed by this
+   prototype's scope.
+9. **No consent flow for takeover.** When a reviewer takes over, the
+   user sees the badge and per-message attribution, but has not been
+   asked up front to consent to potential human review. A real
+   deployment would need an upfront notice ("messages are reviewed by
+   a human if our system flags them as concerning") in the chat banner
+   *before* the user starts typing.
 
-When in doubt, the repo defaults to the safer behavior: log it, surface it
-to a human, and refer the user to a trained crisis line.
+When in doubt, the repo defaults to the safer behavior: log it, surface
+it to a human, and refer the user to a trained crisis line.

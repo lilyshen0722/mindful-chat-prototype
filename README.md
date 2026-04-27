@@ -37,9 +37,10 @@ backend. It is intended as a teaching artifact and a basis for further
 research, not a production safety system.
 
 **Is not:** a substitute for clinical judgment, a deployable service for
-people in distress, or a validated mental-health tool. The rule-based
-detector has known false-positive and false-negative modes that are
-documented in `docs/ethics-mapping.md`.
+people in distress, or a validated mental-health tool. Both detector
+tiers (regex + ML) have known false-positive and false-negative modes,
+documented in `docs/ethics-mapping.md` (limitations) and
+`docs/threat-model.md` (concrete failure modes).
 
 ## Architecture
 
@@ -102,36 +103,64 @@ pip install pytest
 pytest -q
 ```
 
+Fifteen unit tests cover each detector tier (regex, pattern, merge-risk
+helper) plus regression tests for previously-missed phrasings.
+
+## Demo script
+
+For a 5-minute walkthrough that exercises every rubric-relevant
+behavior (multi-conversation switcher, regex tier, ML tier, multi-turn
+pattern, divergence, takeover, paused chat, resume), see
+[docs/user-guide.md § Demo script for graders](docs/user-guide.md#demo-script-for-graders).
+
 ## Repo layout
 
 ```
 app/
   main.py              FastAPI app + routes (chat, admin, takeover, switcher)
-  guardrail.py         Rule-based detector + multi-turn pattern aggregator
+  guardrail.py         Regex detector + multi-turn pattern aggregator
+  ml_classifier.py     Second-tier emotion classifier (HuggingFace)
   llm.py               OpenRouter chat client + risk-aware system prompts
   crisis_resources.py  Hotline numbers + canned safe response
   db.py                SQLite schema + helpers (conversations, escalations,
-                       conversation_state, divergence + reviewer logging)
-  config.py            Env-driven settings
-  static/              Chat UI (sidebar + polling) + admin dashboard
-                       + per-conversation chat-style review page
+                       conversation_state, divergence + reviewer logging,
+                       dedup helper)
+  config.py            Env-driven settings (incl. ML classifier knobs)
+  static/              chat.html + admin.html + admin-conversation.html
+                       + style.css
 docs/
-  written-component.md NIST-RMF-aligned written deliverable (<1000 words)
-  architecture.md      System diagram + dataflow
-  ethics-mapping.md    Explicit framework mapping + known limits
+  written-component.md DSCI 305 final deliverable (<1000 words)
+  architecture.md      System diagram, components, API surface, config
+  ethics-mapping.md    NIST AI RMF + Belmont mapping, rubric crosswalk
+  threat-model.md      Eleven concrete threats with mitigations + residual risk
+  user-guide.md        How to run + use + extend, plus a demo script
 tests/
-  test_guardrail.py    Unit tests for inbound + multi-turn detectors
+  test_guardrail.py    Unit tests (15) for regex, pattern, merge_risk
 docker-compose.yml
-Dockerfile
-requirements.txt
+Dockerfile             Pre-downloads ML weights at build time
+requirements.txt       FastAPI + transformers + CPU torch
 ```
+
+## Documentation map
+
+The required course deliverable is `docs/written-component.md`. The
+remaining docs back it up:
+
+| Doc | What it covers |
+|---|---|
+| [docs/written-component.md](docs/written-component.md) | The under-1000-word deliverable: problem, audience, framework alignment, impact, limitations |
+| [docs/user-guide.md](docs/user-guide.md) | How to run, use, configure, demo, troubleshoot |
+| [docs/architecture.md](docs/architecture.md) | Dataflow diagram, component table, API surface, storage schema, config |
+| [docs/ethics-mapping.md](docs/ethics-mapping.md) | Function-by-function NIST AI RMF mapping, Belmont alignment, rubric crosswalk, design philosophy, known limitations |
+| [docs/threat-model.md](docs/threat-model.md) | Eleven concrete threats (T1–T11), mitigations, residual risk, scope exclusions |
 
 ## Ethical framework
 
-This project is aligned with the **NIST AI Risk Management Framework (2023)**
-(Govern / Map / Measure / Manage), and informed by the **Belmont Report**'s
-principle of beneficence and the course's emphasis on
-**human-in-the-loop**. See `docs/ethics-mapping.md` for the explicit mapping.
+Aligned with the **NIST AI Risk Management Framework (2023)** —
+Govern / Map / Measure / Manage — and informed by the **Belmont Report**
+and the course's emphasis on **human-in-the-loop**. See
+`docs/ethics-mapping.md` for the function-by-function mapping and the
+rubric crosswalk.
 
 ## License
 

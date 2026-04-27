@@ -2,112 +2,126 @@
 
 > **Required deliverable for DSCI 305 final project.** Per the rubric this
 > document specifies (1) the intended audience, (2) the project's alignment
-> with at least one ethical framework, and (3) its potential impact. Target
-> length: under 1,000 words.
+> with at least one ethical framework, and (3) its potential impact, plus a
+> short *Problem & motivation* up front and an honest *Limitations* section.
+> Target length: under 1,000 words.
 
-## 1. Intended audience
+## 1. Problem & motivation
 
-The primary audience for this prototype is **educators, students, and
-applied-AI researchers** who are starting to wire safety guardrails around
-chatbots and need a small, transparent reference they can read end-to-end and
-fork. A secondary audience is **university policy and IT teams** evaluating
-whether to deploy any kind of LLM-based chat tool inside campus services
-(advising portals, student-life chatbots, library helpers); they can use this
-artifact to interrogate questions like "what would minimum due diligence on
-crisis-language handling look like?"
+LLM-powered chat is being deployed inside university tools — academic
+advising, library help, course assistants — with little discipline around
+what happens when a student discloses distress mid-conversation. The two
+common failure modes are symmetric and harmful: the bot ignores the
+disclosure (silent failure, no human notified) or the bot pivots
+abruptly to a crisis hotline mention regardless of severity (dismissive
+of normal venting, trains users not to disclose). Both arise because
+the *guardrail* is treated as a single regex or a single LLM call.
 
-The prototype is **not** built for, and must never be deployed to, people in
-distress. It is a teaching artifact about how to think about layered safety,
-not a replacement for trained crisis counselors. This intent is encoded in
-the UI (a persistent banner directing users to the 988 Lifeline) and in the
-LLM system prompt itself, which forbids diagnosis, prescription, and clinical
-advice.
+This prototype answers the question: *what does layered, auditable,
+human-in-the-loop crisis-language handling look like as a working
+artifact you can read end-to-end?* It is small by design — a single
+FastAPI service, three SQLite tables, two HTML pages — so a reader can
+follow the entire safety pipeline without losing it inside framework
+code. It is not a deployable service.
 
-## 2. Ethical framework alignment
+## 2. Intended audience
 
-The project is explicitly aligned with the **NIST AI Risk Management
-Framework (AI RMF 1.0, 2023)** and informed by the Belmont Report's principle
-of beneficence and the course's emphasis on **human-in-the-loop**.
+The primary audience is **educators, students, and applied-AI
+researchers** wiring safety guardrails around chatbots and looking for a
+small, transparent reference they can fork. A secondary audience is
+**university policy and IT teams** evaluating LLM chat deployments
+inside campus services; they can use this artifact to interrogate "what
+would minimum due diligence on crisis-language handling look like?"
 
-NIST AI RMF organizes responsible AI work into four functions — Govern, Map,
-Measure, Manage. Each is reflected in concrete code or documentation choices:
+The prototype is **not** built for, and must never be deployed to,
+people in distress. The chat UI carries a persistent banner directing
+users to the 988 Lifeline, and the LLM system prompt forbids diagnosis,
+prescription, and clinical advice.
 
-- **Govern.** The repository ships with an MIT license, a written intended
-  audience, an explicit out-of-scope statement, and a rubric-aligned
-  documentation set (`README.md`, `docs/architecture.md`,
-  `docs/ethics-mapping.md`). Sensitive defaults (admin password, API key) are
-  not hard-coded; they are surfaced through `.env.example` and a `.env` file
-  that is `.gitignore`d, so secrets cannot be committed by accident.
-- **Map.** `docs/architecture.md` describes the dataflow from user message
-  through guardrail, LLM, and admin queue, naming the points where harm could
-  enter (LLM hallucination, missed inbound signal, missed outbound signal,
-  admin oversight failure). `docs/ethics-mapping.md` enumerates known failure
-  modes of the rule-based detector.
-- **Measure.** The detector's behavior is reproducible because it is rule
-  based: the patterns live in `app/guardrail.py` and are tested in
-  `tests/test_guardrail.py`. Every escalation is persisted to SQLite with
-  the matched signals so future-me, an auditor, or a course TA can replay the
-  triggers and check them against ground truth.
-- **Manage.** Six mitigation layers are wired in: (a) a second-tier
-  emotion classifier (pinned `SamLowe/roberta-base-go_emotions`, runs
-  locally) catches oblique distress the regex tier misses; (b) outbound
-  checks catch unsafe LLM replies and replace them with a safe template;
-  (c) a *divergence* logger flags cases where the detectors said NONE
-  but the LLM raised crisis resources anyway, surfacing model drift;
-  (d) a multi-turn pattern detector elevates tone when three consecutive
-  distress signals appear; (e) every concern is surfaced on `/admin` plus
-  a per-conversation chat-style review page; (f) the reviewer can *take
-  over* — pausing the LLM and chatting with the user as a human, with a
-  visible "human reviewer engaged" badge.
+## 3. Ethical framework alignment
 
-The project also reflects two course-specific commitments. First, the
-Belmont principle of **beneficence** ("do no harm; maximize benefit") is the
-reason the AI is designed as *peer-like support* rather than a crisis
-substitute: it engages warmly across the full risk spectrum so users feel
-heard, while the intensity of resource mention scales with the guardrail
-signal and any genuine handoff goes to a human, not a hard cutoff. Second,
-the course's repeated insistence that LLM output be treated as a *draft*
-— not as evidence — is encoded as a **human-in-the-loop with active
-controls**: a reviewer can open any conversation in a chat-style review page, send messages
-to the user as a human, and pause the bot entirely.
+The project is explicitly aligned with **NIST AI Risk Management
+Framework (AI RMF 1.0, 2023)** — Govern, Map, Measure, Manage — and
+informed by the Belmont Report's principle of beneficence and the
+course's emphasis on **human-in-the-loop**.
 
-## 3. Potential impact
+- **Govern.** MIT-licensed repo with stated intended use, an
+  out-of-scope statement, and a documentation set
+  (`README.md`, `docs/architecture.md`, `docs/ethics-mapping.md`,
+  `docs/threat-model.md`, `docs/user-guide.md`). Secrets via
+  `.env.example`; the real `.env` is gitignored. Third-party
+  dependencies (OpenRouter LLM provider, HuggingFace classifier
+  weights) are named and configurable.
+- **Map.** `docs/architecture.md` traces the full dataflow.
+  `docs/threat-model.md` enumerates eleven concrete threats (T1–T11),
+  the mitigation for each, and the residual risk that remains.
+- **Measure.** Five distinct `source` values on each escalation row
+  (`input`, `ml-classifier`, `pattern`, `output`, `divergence`) make
+  *each tier's* contribution separately measurable. Pinned ML model
+  weights mean classifier behavior is reproducible; 15 unit tests in
+  `tests/test_guardrail.py` pin both per-level detector behavior and
+  regressions for previously-missed phrasings.
+- **Manage.** Six mitigation layers are wired in:
+  (a) a second-tier emotion classifier (pinned
+  `SamLowe/roberta-base-go_emotions`, runs locally in the container)
+  catches oblique distress the regex misses; (b) outbound checks
+  replace unsafe LLM replies with a safe template; (c) a *divergence*
+  logger flags model drift when the LLM volunteers crisis resources on
+  a NONE-risk turn; (d) a multi-turn pattern detector elevates tone
+  when three consecutive distress signals appear; (e) every concern is
+  surfaced on `/admin` plus a per-conversation chat-style review page;
+  (f) the reviewer can *take over* — pausing the LLM and chatting with
+  the user as a human, with a visible "human reviewer engaged" badge.
 
-The realistic impact of this artifact is small and educational, and the
-documentation is honest about that. Its value is threefold:
+Two course-specific commitments. First, **beneficence** is the reason
+the AI is *peer-like support* rather than a crisis substitute: it
+engages warmly across the risk spectrum so users feel heard, while the
+intensity of resource mention scales with the guardrail signal and any
+genuine handoff goes to a human. Second, the course's repeated
+insistence that LLM output be treated as a *draft* — not as evidence —
+is encoded as a **human-in-the-loop with active controls**: a reviewer
+can open any conversation in chat-style, send messages as the reviewer,
+and pause the bot entirely.
 
-1. **A teaching scaffold.** Students working on similar projects can fork it
-   and replace the rule-based detector with a trained classifier or an
-   LLM-judge tier without touching the rest of the architecture, giving them
-   a hands-on way to compare detection methods on the same harness.
-2. **A discussion artifact.** The repository is a concrete object instructors
-   can use to ground conversations about NIST AI RMF, false-positive vs.
-   false-negative tradeoffs, and the limits of regex-based moderation — all
-   without anyone having to deploy a real chatbot to vulnerable users.
-3. **A starting point for safer university chat tools.** If campus teams
-   eventually deploy LLM chat anywhere students might disclose distress (an
-   academic-advising bot, a course Q&A assistant), this prototype offers a
-   minimum-viable pattern — guardrail in front, guardrail behind, human
-   review queue, mandatory crisis-line redirect — they can adapt instead of
-   building from scratch and missing pieces.
+## 4. Potential impact
 
-The risks of misuse are addressed at three layers: the README's first line
+Realistic impact is small and educational, and the documentation says so.
+
+1. **A teaching scaffold.** Students working on similar projects can
+   fork it and replace any tier — regex, ML classifier, LLM-judge —
+   without touching the rest of the architecture. The five distinct
+   `source` values let a researcher A/B compare detection methods on
+   the same harness.
+2. **A discussion artifact.** The repo is a concrete object instructors
+   can use to ground conversations about NIST AI RMF, the
+   tier-by-tier tradeoff between recall and reviewer fatigue, the
+   transparency cost of using a third-party HuggingFace classifier
+   versus another opaque LLM, and the limits of any rule-based
+   moderation — all without deploying anything to vulnerable users.
+3. **A starting point for safer university chat tools.** A campus team
+   that eventually deploys an LLM chat where students might disclose
+   distress (advising bot, course Q&A) can adapt this minimum-viable
+   pattern — guardrail in front, classifier in front, guardrail behind,
+   human review queue, takeover affordance, mandatory crisis-line
+   redirect — instead of building from scratch and missing pieces.
+
+Risks of misuse are addressed at three layers: README's first line
 declares the prototype is not a crisis service; the chat UI carries a
-persistent banner with the 988 number; and the LLM system prompt forbids
-clinical advice and reinforces the redirection. Anyone who deploys this
-publicly in violation of those guardrails would be doing so against the
-explicit written warnings in the code and documentation.
+persistent 988 banner; and the LLM system prompt forbids clinical
+advice. The threat-model names "treating the prototype as
+production-ready" as the meta-threat (T11).
 
-## 4. Limitations and honest caveats
+## 5. Limitations and honest caveats
 
-This prototype's biggest known limitation is its **rule-based detector**.
-Regex patterns will miss oblique, coded, multilingual, or sarcastic
-expressions of distress, and they will fire on figurative language, song
-lyrics, and third-person discussions ("my friend says she wants to die").
-The pattern detector and divergence logger partially compensate, but the
-underlying matcher is still English-only and rule-bound. A real deployment
-would need a trained classifier, an LLM judge, and periodic re-evaluation
-against fresh labels. The takeover feature is intentionally minimal: no
-out-of-band reviewer notification, no SLA on response time, and no consent
-flow that explicitly tells the user up front that a human may join. Each
-limitation is documented in `docs/ethics-mapping.md` rather than hidden.
+The biggest honest limitation is that the detector stack is still
+**English-only and non-clinical**. The regex tier patches iteratively
+as audit surfaces misses; the ML tier inherits the GoEmotions Reddit
+distribution and its demographic skew; neither claims clinical
+validity. Capping the ML tier at LOW (never MEDIUM/HIGH) is
+deliberate — emotion classification cannot responsibly fabricate
+clinical urgency. A production deployment would add a classifier
+fine-tuned on a clinical corpus, an LLM-judge tier for borderline
+cases, real reviewer auth + audit logs, and an upfront consent banner
+warning users that messages may be reviewed by a human. Each is
+documented in `docs/ethics-mapping.md` and `docs/threat-model.md`
+rather than hidden.
