@@ -20,9 +20,9 @@ is addressed in the artifact:
 | Rubric criterion | Where it lives in this repo |
 |---|---|
 | **Problem / Question (20%)** | `docs/written-component.md` §1 ("Problem & motivation"); `README.md` opening paragraphs frame the problem as "how should an LLM chatbot handle disclosed distress, and how do you know it's doing so safely?" |
-| **Framework Application (25%)** | This file — function-by-function NIST AI RMF mapping below; Belmont alignment; course-themes section. `docs/threat-model.md` makes the *Map* function concrete. The hard-cap design of the ML tier (LOW only, never MEDIUM/HIGH) is itself a framework-driven choice and is documented in the "Second-tier emotion classifier" section. |
+| **Framework Application (25%)** | This file — function-by-function NIST AI RMF mapping below; Belmont alignment; course-themes section. `docs/threat-model.md` makes the *Map* function concrete. The tiered cap design (regex up to HIGH, ML at LOW, LLM-judge at MEDIUM) is itself a framework-driven choice and is documented in the second-tier and third-tier sections below. |
 | **Execution / Quality (30%)** | `app/` source code; `tests/test_guardrail.py`; the iterative commit history (each new mitigation paired with a smoke test). `docs/architecture.md` documents the layering. |
-| **Impact / Utility (15%)** | `docs/written-component.md` §3; "What this is and is not" section of `README.md`; the prototype runs offline with `ENABLE_ML_CLASSIFIER=true` and no ongoing API cost beyond the LLM, which is the relevant property for a campus deployment. |
+| **Impact / Utility (15%)** | `docs/written-component.md` §3; "What this is and is not" section of `README.md`; with `ENABLE_LLM_JUDGE=false` the prototype runs primarily offline (only the chat LLM call leaves the host), and either ML or judge tier can be disabled to suit a deployer's privacy / cost / latency profile — relevant properties for a campus deployment. |
 | **Documentation (10%)** | `README.md`, `docs/user-guide.md`, `docs/architecture.md`, this file, `docs/threat-model.md`, `docs/written-component.md`. Each commit message explains the *why*, not just the *what*. |
 
 ## NIST AI RMF — function-by-function mapping
@@ -48,9 +48,9 @@ is addressed in the artifact:
 
 | AI RMF expectation                                    | How this repo addresses it                                                   |
 |-------------------------------------------------------|------------------------------------------------------------------------------|
-| Identify appropriate methods and metrics              | Risk levels NONE / LOW / MEDIUM / HIGH; per-tier signal sources (`input` / `ml-classifier` / `pattern` / `output` / `divergence`) so each tier's contribution is separately measurable |
+| Identify appropriate methods and metrics              | Risk levels NONE / LOW / MEDIUM / HIGH; per-tier signal sources (`input` / `ml-classifier` / `llm-judge` / `pattern` / `output` / `divergence`, plus `*-while-paused` variants) so each tier's contribution is separately measurable from the admin queue alone |
 | Track AI risk through measurement and assessment      | Every escalation persisted with matched signals (regex matches *and* per-label ML scores); admin dashboard + per-conversation review page expose the audit trail |
-| Track regression                                      | `tests/test_guardrail.py` (15 tests) covers each detector tier and pins regressions for previously-missed phrasings (e.g., "feeling really down today"); pinned ML model weights mean classifier behavior stays comparable across runs |
+| Track regression                                      | `tests/test_guardrail.py` (17 tests) covers each regex tier (LOW / MEDIUM / HIGH / pattern / merge_risk) and pins regressions for previously-missed phrasings ("feeling really down today", "I don't have any friends at school", "I want to end all of this", "put an end to everything"). Pinned ML model weights mean classifier behavior stays comparable across runs; the LLM-judge tier is exercised via Playwright + httpx smoke tests against a running container |
 
 ### Manage
 

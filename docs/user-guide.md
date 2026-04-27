@@ -25,9 +25,11 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The first build is slow (~3 minutes) because it downloads PyTorch (CPU
-build) plus the HuggingFace classifier weights so the second tier is
-warm on first request. Subsequent builds use the cached layer.
+The first build is slow (~3 minutes) because it downloads PyTorch
+(CPU build) plus the HuggingFace classifier weights so the second tier
+is warm on first request. The third-tier LLM-judge does not require a
+build-time download — it calls OpenRouter at request time, so it boots
+instantly. Subsequent builds use the cached layer.
 
 Open:
 
@@ -57,8 +59,10 @@ pip install pytest
 pytest -q
 ```
 
-There are 15 unit tests covering each detector tier and a regression suite
-for previously-missed phrasings.
+There are 17 unit tests covering each regex tier (LOW / MEDIUM / HIGH /
+pattern / merge_risk) and a regression suite for previously-missed
+phrasings. The ML and LLM-judge tiers are exercised via Playwright +
+httpx smoke tests against a running container.
 
 ---
 

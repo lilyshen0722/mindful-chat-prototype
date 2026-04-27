@@ -39,10 +39,10 @@ backend. It is intended as a teaching artifact and a basis for further
 research, not a production safety system.
 
 **Is not:** a substitute for clinical judgment, a deployable service for
-people in distress, or a validated mental-health tool. Both detector
-tiers (regex + ML) have known false-positive and false-negative modes,
-documented in `docs/ethics-mapping.md` (limitations) and
-`docs/threat-model.md` (concrete failure modes).
+people in distress, or a validated mental-health tool. All three
+detector tiers (regex + ML + LLM-judge) have known false-positive and
+false-negative modes, documented in `docs/ethics-mapping.md`
+(limitations) and `docs/threat-model.md` (concrete failure modes).
 
 ## Architecture
 
@@ -50,11 +50,13 @@ documented in `docs/ethics-mapping.md` (limitations) and
 ┌──────────┐    ┌──────────────────────────────────────────────────────────┐
 │ chat UI  │───▶│ FastAPI                                                   │
 │ (HTML/JS)│◀───│  ├── /api/chat (SSE)                                      │
-│ + sidebar│    │  │   1. inbound assess  +  multi-turn pattern assess     │
-│ + polling│    │  │   2. if state=human → bypass LLM, send notice         │
+│ + sidebar│    │  │   1. regex assess + (if NONE) ML + (if NONE) LLM-judge│
+│ + polling│    │  │   1b. multi-turn pattern assess on recent user msgs   │
+│          │    │  │   2. if state=human → bypass LLM, send paused notice  │
 │          │    │  │   3. else → call OpenRouter with risk-aware prompt    │
 │          │    │  │   4. outbound assess; replace unsafe replies          │
-│          │    │  │   5. log: input / pattern / output / divergence rows  │
+│          │    │  │   5. log: input/ml-classifier/llm-judge/pattern/      │
+│          │    │  │           output/divergence rows                       │
 │          │    │  ├── /api/conversation/{cid}/messages, /state            │
 │          │    │  ├── /api/conversations/preview (sidebar)                │
 │          │    │  ├── /admin + /admin/conversations/{cid} (HTTP Basic)    │
@@ -105,14 +107,18 @@ pip install pytest
 pytest -q
 ```
 
-Fifteen unit tests cover each detector tier (regex, pattern, merge-risk
-helper) plus regression tests for previously-missed phrasings.
+Seventeen unit tests cover each detector tier (regex LOW/MEDIUM/HIGH,
+multi-turn pattern, merge-risk helper) plus regression tests for
+previously-missed phrasings (`feeling really down`, `end all of this`,
+etc.). The ML and LLM-judge tiers are exercised via Playwright + httpx
+smoke tests against a running container; results documented inline in
+their commit messages.
 
 ## Demo script
 
 For a 5-minute walkthrough that exercises every rubric-relevant
-behavior (multi-conversation switcher, regex tier, ML tier, multi-turn
-pattern, divergence, takeover, paused chat, resume), see
+behavior (multi-conversation switcher, all three detector tiers,
+multi-turn pattern, divergence, takeover, paused chat, resume), see
 [docs/user-guide.md § Demo script for graders](docs/user-guide.md#demo-script-for-graders).
 
 ## Repo layout
@@ -128,7 +134,7 @@ app/
   db.py                SQLite schema + helpers (conversations, escalations,
                        conversation_state, divergence + reviewer logging,
                        dedup helper)
-  config.py            Env-driven settings (incl. ML classifier knobs)
+  config.py            Env-driven settings (LLM, ML, judge, admin auth)
   static/              chat.html + admin.html + admin-conversation.html
                        + style.css
 docs/
@@ -138,7 +144,7 @@ docs/
   threat-model.md      Eleven concrete threats with mitigations + residual risk
   user-guide.md        How to run + use + extend, plus a demo script
 tests/
-  test_guardrail.py    Unit tests (15) for regex, pattern, merge_risk
+  test_guardrail.py    Unit tests (17) for regex, pattern, merge_risk
 docker-compose.yml
 Dockerfile             Pre-downloads ML weights at build time
 requirements.txt       FastAPI + transformers + CPU torch

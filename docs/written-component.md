@@ -46,21 +46,18 @@ informed by the Belmont Report's principle of beneficence and the
 course's emphasis on **human-in-the-loop**.
 
 - **Govern.** MIT-licensed repo with stated intended use, an
-  out-of-scope statement, and a documentation set
-  (`README.md`, `docs/architecture.md`, `docs/ethics-mapping.md`,
-  `docs/threat-model.md`, `docs/user-guide.md`). Secrets via
-  `.env.example`; the real `.env` is gitignored. Third-party
-  dependencies (OpenRouter LLM provider, HuggingFace classifier
-  weights) are named and configurable.
+  out-of-scope statement, and a full documentation set in `docs/`.
+  Secrets via `.env.example`; real `.env` is gitignored. Third-party
+  dependencies (OpenRouter, HuggingFace) are named and configurable.
 - **Map.** `docs/architecture.md` traces the full dataflow.
   `docs/threat-model.md` enumerates eleven concrete threats (T1–T11),
   the mitigation for each, and the residual risk that remains.
 - **Measure.** Five distinct `source` values on each escalation row
   (`input`, `ml-classifier`, `pattern`, `output`, `divergence`) make
-  *each tier's* contribution separately measurable. Pinned ML model
-  weights mean classifier behavior is reproducible; 15 unit tests in
-  `tests/test_guardrail.py` pin both per-level detector behavior and
-  regressions for previously-missed phrasings.
+  each tier's contribution separately measurable. Pinned ML model
+  weights make classifier behavior reproducible; 17 unit tests in
+  `tests/test_guardrail.py` pin regex behavior and regression cases;
+  the ML and judge tiers are exercised via container smoke tests.
 - **Manage.** Seven mitigation layers are wired in:
   (a) a second-tier emotion classifier (pinned
   `SamLowe/roberta-base-go_emotions`, runs locally) catches oblique
