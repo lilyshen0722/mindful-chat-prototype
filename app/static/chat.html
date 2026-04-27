@@ -213,9 +213,11 @@
             wrap.classList.remove("streaming");
             firstToken = false;
           } else if (payload.type === "done") {
-            if (payload.escalated) {
-              meta.textContent = `risk: ${payload.risk_level} · logged for review`;
-            }
+            // Risk classification is intentionally NOT surfaced to the user
+            // here — labeling someone's message as "low/medium" mid-chat
+            // breaks the peer-support framing. Reviewers see it on the admin
+            // side; the user sees only the bot's reply (and, when paused,
+            // the takeover badge).
             if (firstToken) {
               bubble.textContent = "[no response]";
             }
