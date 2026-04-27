@@ -92,6 +92,9 @@
       bubble.className = "bubble";
       bubble.innerHTML = renderText(m.content);
       wrap.appendChild(bubble);
+      // Risk level is intentionally NOT shown next to each bubble — the
+      // sidebar already lists every flagged message with its source +
+      // signals. Per-bubble risk pills here would just be visual noise.
       const meta = document.createElement("div");
       meta.className = "meta";
       const ts = m.created_at ? `<span class="muted small">${escapeHtml(m.created_at)}</span>` : "";
@@ -100,9 +103,8 @@
         tags.push(`<span class="meta--reviewer">human reviewer</span>`);
       } else if (role === "assistant") {
         tags.push(`<span class="muted small">bot</span>`);
-      }
-      if (m.risk_level && !["none", "human-reviewer"].includes(m.risk_level)) {
-        tags.push(`<span class="risk risk--${escapeHtml(m.risk_level)}">${escapeHtml(m.risk_level)}</span>`);
+      } else if (role === "user") {
+        tags.push(`<span class="muted small">user</span>`);
       }
       meta.innerHTML = [...tags, ts].filter(Boolean).join(" · ");
       wrap.appendChild(meta);
