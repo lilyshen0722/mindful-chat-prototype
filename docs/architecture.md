@@ -11,7 +11,9 @@
        ┌──────────────────────────────────────────────────────────────────┐
        │ FastAPI app (app/main.py)                                         │
        │                                                                   │
-       │ 1. inbound = assess(user_message)             ── single-message   │
+       │ 1. regex = assess(user_message)               ── single-message   │
+       │ 1b. if regex == NONE: ml = assess_ml(...)      ── go_emotions     │
+       │     → inbound = max(regex, ml-elevation-to-LOW)                  │
        │ 2. pattern = assess_pattern(recent_user_msgs) ── multi-turn       │
        │ 3. effective_risk = max(inbound, pattern)                         │
        │ 4. state = get_conversation_state(cid)                            │
@@ -25,8 +27,9 @@
        │      └─ safe but effective_risk MEDIUM/HIGH and no resource       │
        │         mentioned → emit short footer                              │
        │ 8. log to escalations:                                            │
-       │      • input          if inbound != NONE                          │
-       │      • pattern        if pattern triggered but inbound was NONE   │
+       │      • input          if regex tripped on user message            │
+       │      • ml-classifier  if regex was NONE but go_emotions flagged   │
+       │      • pattern        if pattern elevated beyond inbound          │
        │      • divergence     if effective NONE but bot mentioned 988     │
        │ 9. persist conversation + emit "done" event                       │
        └────────┬──────────────────────────────────┬───────────────────────┘
@@ -105,13 +108,15 @@ and auditable. Three tables:
 The `source` column on `escalations` distinguishes which layer of the
 pipeline fired the alert:
 
-| `source`              | Meaning                                                                 |
-|-----------------------|-------------------------------------------------------------------------|
-| `input`               | Inbound user message tripped the regex.                                 |
-| `pattern`             | Multi-turn aggregation: 3 consecutive non-NONE user messages.           |
-| `output`              | Outbound LLM reply tripped the regex (unsafe content; reply replaced).  |
-| `divergence`          | Effective risk was NONE but the LLM volunteered a crisis resource — surfaces a model-vs-policy mismatch. |
-| `input-while-paused`  | Inbound concern signal that arrived while a human reviewer had paused the bot. |
+| `source`                       | Meaning                                                                 |
+|--------------------------------|-------------------------------------------------------------------------|
+| `input`                        | Inbound user message tripped the regex.                                 |
+| `ml-classifier`                | Inbound message wasn't caught by the regex but the second-tier emotion classifier flagged at least one negative-affect label above threshold. |
+| `pattern`                      | Multi-turn aggregation: 3 consecutive non-NONE user messages.           |
+| `output`                       | Outbound LLM reply tripped the regex (unsafe content; reply replaced).  |
+| `divergence`                   | Effective risk was NONE but the LLM volunteered a crisis resource — surfaces a model-vs-policy mismatch. |
+| `input-while-paused`           | Inbound concern signal that arrived while a human reviewer had paused the bot. |
+| `ml-classifier-while-paused`   | Same, but the inbound classification came from the ML tier.            |
 
 ## Failure handling
 

@@ -164,6 +164,59 @@ intentional and worth surfacing as both a privacy property (no PII) and
 a limitation (a real deployment with multi-device sync would need real
 identity, with all the data-handling obligations that brings).
 
+## Second-tier emotion classifier (ML tier)
+
+To close coverage gaps that the regex tier inevitably has, a second tier
+runs `SamLowe/roberta-base-go_emotions` (a pretrained 28-emotion
+multi-label classifier from Hugging Face) on every inbound message that
+the regex didn't already classify. If any of a deliberately conservative
+set of negative-affect labels (`sadness`, `grief`, `disappointment`,
+`remorse`, `fear`, `nervousness`) crosses the configured threshold, the
+inbound risk is elevated to `LOW` and the row is logged to the admin
+queue with `source=ml-classifier` and the per-label scores embedded in
+`matched_signals` for audit.
+
+**Why this model and this design:**
+
+- *NIST AI RMF Govern.* The model weights are pinned (specific HF repo
+  + specific revision shipped via the Docker image). A reviewer can
+  inspect the model card, the dataset (GoEmotions = Reddit comments
+  labeled by crowd workers), and the inference path. By contrast, an
+  LLM-judge tier would route to a third-party model that can change
+  without notice.
+- *NIST AI RMF Map.* The dataset's known biases — English-only, Reddit
+  demographic skew, US-cultural framing of emotion words, possible
+  noise in crowd labels — are nameable and citable rather than opaque.
+- *NIST AI RMF Measure.* Frozen weights + deterministic inference mean
+  the test suite stays meaningful over time. A regression test can
+  pin "this phrase produces sadness ≥ 0.5" forever.
+- *Belmont (Respect for Persons).* The classifier runs locally inside
+  the same container; no additional user data egress to a third party
+  beyond the LLM call we already make for the chat reply itself.
+- *Course theme — interpretability and "scientism".* The classifier
+  is *more* auditable than another LLM, not less. Per-message label
+  scores let a reviewer interrogate "why did this fire?" — the kind
+  of artifact the course materials repeatedly call for.
+
+**Hard limit, by design.** The classifier can only ELEVATE inbound risk
+from `NONE` to `LOW`. `MEDIUM` and `HIGH` stay reserved for explicit
+ideation/plan/means signals from the regex tier and from the multi-turn
+pattern aggregator. An emotion classifier should not fabricate clinical
+urgency from emotional tone — that would be the kind of overreach the
+course's "scientism" critique warns against.
+
+**Failure mode.** If the model fails to load (e.g., HF unreachable in a
+new build, weights corrupted), the classifier *fails open*: a warning
+is logged, every call returns `NONE`, and the chat continues to operate
+on the regex tier alone. This is intentional — a broken second tier
+should not take the system offline.
+
+**What a production deployment would add next.** A trained domain
+classifier (e.g., fine-tuned on CLPsych or a curated mental-health
+corpus rather than GoEmotions/Reddit), an LLM-judge third tier for
+borderline cases, and continuous re-evaluation of label thresholds
+against fresh ground-truth audited by clinical reviewers.
+
 ## Known limitations
 
 These are intentionally documented (not buried) because the framework

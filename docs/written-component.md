@@ -48,15 +48,17 @@ Measure, Manage. Each is reflected in concrete code or documentation choices:
   `tests/test_guardrail.py`. Every escalation is persisted to SQLite with
   the matched signals so future-me, an auditor, or a course TA can replay the
   triggers and check them against ground truth.
-- **Manage.** Five mitigation layers are wired in: (a) outbound checks
-  catch unsafe LLM replies and replace them with a safe template; (b) a
-  *divergence* logger flags cases where the rule-based detector said NONE
-  but the LLM raised crisis resources anyway, so reviewers can audit
-  policy-vs-behavior drift; (c) a multi-turn pattern detector elevates
-  tone when three consecutive distress signals appear; (d) every concern
-  signal is surfaced on `/admin` plus a per-conversation chat-style review page; (e) the
-  reviewer can *take over* — pausing the LLM and chatting with the user
-  as a human, with a visible "human reviewer engaged" badge.
+- **Manage.** Six mitigation layers are wired in: (a) a second-tier
+  emotion classifier (pinned `SamLowe/roberta-base-go_emotions`, runs
+  locally) catches oblique distress the regex tier misses; (b) outbound
+  checks catch unsafe LLM replies and replace them with a safe template;
+  (c) a *divergence* logger flags cases where the detectors said NONE
+  but the LLM raised crisis resources anyway, surfacing model drift;
+  (d) a multi-turn pattern detector elevates tone when three consecutive
+  distress signals appear; (e) every concern is surfaced on `/admin` plus
+  a per-conversation chat-style review page; (f) the reviewer can *take
+  over* — pausing the LLM and chatting with the user as a human, with a
+  visible "human reviewer engaged" badge.
 
 The project also reflects two course-specific commitments. First, the
 Belmont principle of **beneficence** ("do no harm; maximize benefit") is the

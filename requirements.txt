@@ -1,6 +1,13 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 fastapi==0.115.4
 uvicorn[standard]==0.32.0
 httpx==0.27.2
 pydantic==2.9.2
 pydantic-settings==2.6.1
 python-multipart==0.0.17
+
+# Second-tier emotion classifier (SamLowe/roberta-base-go_emotions).
+# Pinned to CPU torch via the index URL above to keep the image lean.
+torch==2.5.1
+transformers==4.46.2

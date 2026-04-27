@@ -31,6 +31,7 @@ from .db import (
 )
 from .guardrail import GuardrailResult, RiskLevel, assess, assess_pattern, merge_risk
 from .llm import LLMUnavailable, build_system_prompt, chat_stream
+from .ml_classifier import assess_ml
 
 
 @asynccontextmanager
@@ -159,7 +160,23 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
     If a human reviewer has paused the conversation, the LLM is bypassed
     entirely and the user gets a short notice that a human is engaged.
     """
-    inbound: GuardrailResult = assess(req.message)
+    # First tier: regex. Cheap, deterministic, audit-friendly.
+    inbound_regex: GuardrailResult = assess(req.message)
+    # Second tier: emotion classifier — only consulted when the regex didn't
+    # already classify the message. The classifier can only ELEVATE NONE → LOW;
+    # MEDIUM/HIGH stay reserved for explicit signals from the regex tier.
+    ml_result = assess_ml(req.message) if inbound_regex.risk == RiskLevel.NONE else None
+
+    if ml_result is not None and ml_result.risk != RiskLevel.NONE:
+        inbound = GuardrailResult(
+            risk=ml_result.risk,
+            matched=inbound_regex.matched + ml_result.matched,
+        )
+        inbound_source = "ml-classifier"
+    else:
+        inbound = inbound_regex
+        inbound_source = "input"
+
     user_msg_id = save_message(req.conversation_id, "user", req.message, inbound.risk.value)
 
     history = recent_history(req.conversation_id, limit=10)
@@ -177,7 +194,7 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
     # bot reply.
     if state != "human" and inbound.risk != RiskLevel.NONE:
         log_escalation(
-            req.conversation_id, inbound, req.message, None, source="input"
+            req.conversation_id, inbound, req.message, None, source=inbound_source
         )
     if (
         state != "human"
@@ -194,12 +211,17 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
         # sees risk patterns) but do not invoke the LLM. The reviewer will
         # respond out-of-band via the admin UI.
         if inbound.risk != RiskLevel.NONE:
+            paused_source = (
+                "ml-classifier-while-paused"
+                if inbound_source == "ml-classifier"
+                else "input-while-paused"
+            )
             log_escalation(
                 req.conversation_id,
                 inbound,
                 req.message,
                 PAUSED_NOTICE,
-                source="input-while-paused",
+                source=paused_source,
             )
         asst_msg_id = save_message(
             req.conversation_id, "assistant", PAUSED_NOTICE, "none"

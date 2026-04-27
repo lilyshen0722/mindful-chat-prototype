@@ -9,16 +9,19 @@
 A demonstration of an *advisory* guardrail layered around an LLM-powered
 chatbot. The bot itself is meant to feel like a normal chat assistant — the
 guardrail does NOT replace its replies. Instead it (a) detects language
-associated with distress or self-harm, (b) modulates the LLM's system prompt
-so it responds with the right tone for each turn (curious on LOW, validating
-+ gently mentioning 988 on MEDIUM, urgent on HIGH), (c) softly appends
-crisis resources only if the model failed to mention any, (d) flags
-*divergence* when the model volunteers crisis resources on a NONE-risk turn,
-(e) elevates tone when several consecutive turns show distress (multi-turn
-pattern aggregation), and (f) routes every concern signal to a simulated
-administrator review queue so a human-in-the-loop can audit, open any
-conversation in a chat-style review page, and **take over** (pause the
-bot, send messages as the reviewer). The only paths that override the
+associated with distress or self-harm via a regex tier, (b) when the regex
+finds nothing, runs a second-tier emotion classifier
+(`SamLowe/roberta-base-go_emotions`) to catch oblique distress phrasings,
+(c) modulates the LLM's system prompt so it responds with the right tone
+for each turn (curious on LOW, validating + gently mentioning 988 on
+MEDIUM, urgent on HIGH), (d) softly appends crisis resources only if the
+model failed to mention any, (e) flags *divergence* when the model
+volunteers crisis resources on a NONE-risk turn, (f) elevates tone when
+several consecutive turns show distress (multi-turn pattern aggregation),
+and (g) routes every concern signal to a simulated administrator review
+queue so a human-in-the-loop can audit, open any conversation in a
+chat-style review page, and **take over** (pause the bot, send messages
+as the reviewer). The only paths that override the
 model's reply are the outbound guardrail (replaces unsafe LLM content with
 a safe template) and an explicit reviewer pause.
 
