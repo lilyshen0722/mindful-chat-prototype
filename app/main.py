@@ -31,6 +31,7 @@ from .db import (
 )
 from .guardrail import GuardrailResult, RiskLevel, assess, assess_pattern, merge_risk
 from .llm import LLMUnavailable, build_system_prompt, chat_stream
+from .llm_judge import assess_llm_judge
 from .ml_classifier import assess_ml
 
 
@@ -162,12 +163,37 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
     """
     # First tier: regex. Cheap, deterministic, audit-friendly.
     inbound_regex: GuardrailResult = assess(req.message)
-    # Second tier: emotion classifier — only consulted when the regex didn't
-    # already classify the message. The classifier can only ELEVATE NONE → LOW;
-    # MEDIUM/HIGH stay reserved for explicit signals from the regex tier.
+    # Second tier: emotion classifier — only consulted when regex didn't
+    # already classify. Caps at LOW.
     ml_result = assess_ml(req.message) if inbound_regex.risk == RiskLevel.NONE else None
 
-    if ml_result is not None and ml_result.risk != RiskLevel.NONE:
+    # Persist the user message *before* the third-tier (async) judge call,
+    # so a mid-call disconnect can't lose the message itself. The risk_level
+    # written here reflects the synchronous tiers; the async judge can still
+    # log a separate escalation row if it fires.
+    sync_risk = ml_result.risk if (ml_result and ml_result.risk != RiskLevel.NONE) else inbound_regex.risk
+    user_msg_id = save_message(req.conversation_id, "user", req.message, sync_risk.value)
+
+    # Third tier: LLM judge — only when regex and ML both said NONE. Caps at MEDIUM.
+    # Wrapped so any unexpected failure (provider quota, transient network, etc.)
+    # cannot take down the chat — fail-open is the design contract for this tier.
+    judge_result = None
+    if inbound_regex.risk == RiskLevel.NONE and (ml_result is None or ml_result.risk == RiskLevel.NONE):
+        try:
+            judge_result = await assess_llm_judge(req.message)
+        except Exception:  # noqa: BLE001
+            judge_result = None
+
+    # Resolve final inbound risk. The order — judge > ml > regex — matters
+    # because the judge can elevate to MEDIUM, the ML tier caps at LOW, and
+    # the regex tier might have already returned MEDIUM/HIGH.
+    if judge_result is not None and judge_result.risk != RiskLevel.NONE:
+        inbound = GuardrailResult(
+            risk=judge_result.risk,
+            matched=inbound_regex.matched + judge_result.matched,
+        )
+        inbound_source = "llm-judge"
+    elif ml_result is not None and ml_result.risk != RiskLevel.NONE:
         inbound = GuardrailResult(
             risk=ml_result.risk,
             matched=inbound_regex.matched + ml_result.matched,
@@ -176,8 +202,6 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
     else:
         inbound = inbound_regex
         inbound_source = "input"
-
-    user_msg_id = save_message(req.conversation_id, "user", req.message, inbound.risk.value)
 
     history = recent_history(req.conversation_id, limit=10)
     user_history = [h["content"] for h in history if h["role"] == "user"]
@@ -211,11 +235,11 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
         # sees risk patterns) but do not invoke the LLM. The reviewer will
         # respond out-of-band via the admin UI.
         if inbound.risk != RiskLevel.NONE:
-            paused_source = (
-                "ml-classifier-while-paused"
-                if inbound_source == "ml-classifier"
-                else "input-while-paused"
-            )
+            paused_source_map = {
+                "ml-classifier": "ml-classifier-while-paused",
+                "llm-judge": "llm-judge-while-paused",
+            }
+            paused_source = paused_source_map.get(inbound_source, "input-while-paused")
             log_escalation(
                 req.conversation_id,
                 inbound,

@@ -29,5 +29,15 @@ class Settings(BaseSettings):
     ml_classifier_threshold: float = 0.4
     ml_classifier_min_words: int = 4
 
+    # Third-tier LLM-judge. Consulted only when both regex and ML said
+    # NONE. Capped at MEDIUM by prompt design — HIGH stays reserved for
+    # the regex tier's explicit plan/means/time signals.
+    enable_llm_judge: bool = True
+    # Empty string = use the same model as the chat (settings.openrouter_model).
+    # Override to point at a smaller / faster / different-vendor model.
+    llm_judge_model: str = ""
+    llm_judge_min_words: int = 6
+    llm_judge_timeout: float = 10.0
+
 
 settings = Settings()

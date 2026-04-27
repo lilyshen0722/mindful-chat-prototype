@@ -120,10 +120,11 @@ every 3 seconds (toggleable).
 |---|---|
 | `input` | User message tripped the regex tier directly. |
 | `ml-classifier` | Regex returned NONE; the emotion classifier elevated to LOW. The matched signals show per-label scores like `ml:sadness=0.87`. |
+| `llm-judge` | Regex *and* ML both returned NONE; the third-tier LLM judge classified LOW or MEDIUM. The judge's one-sentence reason is included in `matched_signals`. |
 | `pattern` | Multi-turn rolling window tripped (3+ consecutive non-NONE user messages). Logged once per streak; ack to reset. |
 | `output` | The LLM's own reply tripped the outbound regex (unsafe content); the reply was *replaced* with the safe template. |
 | `divergence` | The LLM volunteered crisis resources on a NONE-risk turn. The reply was *not* modified — this row exists for audit so you can see model drift from documented policy. Deduped while one is open. |
-| `input-while-paused`, `ml-classifier-while-paused` | Same as `input` / `ml-classifier`, but the row was logged while the bot was paused for human takeover. |
+| `input-while-paused`, `ml-classifier-while-paused`, `llm-judge-while-paused` | Same as the corresponding source, but the row was logged while the bot was paused for human takeover. |
 
 ### Acknowledging a row
 
@@ -191,6 +192,10 @@ All knobs are environment variables (read from `.env` by `pydantic-settings`).
 | `ML_CLASSIFIER_MODEL` | `SamLowe/roberta-base-go_emotions` | HuggingFace model id. Pre-downloaded into the Docker image. |
 | `ML_CLASSIFIER_THRESHOLD` | `0.4` | Per-label score threshold for elevation to LOW. Tuned for go_emotions; raise to reduce false positives, lower to catch more. |
 | `ML_CLASSIFIER_MIN_WORDS` | `4` | Skip the classifier on very short messages ("Hi", "ok"). |
+| `ENABLE_LLM_JUDGE` | `true` | Toggle the third-tier LLM judge. Disable to skip the ~1–2s extra latency it adds. |
+| `LLM_JUDGE_MODEL` | *empty (= chat model)* | Override to use a different model for judge calls. Recommended: a non-reasoning model so the entire token budget goes to the JSON answer. |
+| `LLM_JUDGE_MIN_WORDS` | `6` | Skip the judge on short messages. |
+| `LLM_JUDGE_TIMEOUT` | `10.0` | Seconds before the judge call fails open. |
 
 ---
 
@@ -206,6 +211,10 @@ A 5-minute walkthrough covering each rubric-relevant behavior. Run after
 3. **ML tier.** Send "I miss my old friends a lot, it's been hard". Regex
    doesn't match this; classifier scores `sadness ≈ 0.9`. Row appears with
    `source=ml-classifier`, signals `["ml:sadness=0.91"]`.
+3a. **LLM-judge tier.** Send "I'm just so done with everything, I want it
+    all to be over". Regex misses (no enumerated euphemism), the ML
+    classifier reads it as `desire`, and the third-tier judge picks it up
+    as `risk=medium` with a one-sentence reason in `matched_signals`.
 4. **Pattern.** Send three LOW-tone messages in a row in a fresh conversation.
    First two log as `input`. Third also logs a `pattern` row at MEDIUM —
    bot tone elevates with a gentle 988 mention.

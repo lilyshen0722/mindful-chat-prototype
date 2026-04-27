@@ -13,7 +13,8 @@
        │                                                                   │
        │ 1. regex = assess(user_message)               ── single-message   │
        │ 1b. if regex == NONE: ml = assess_ml(...)      ── go_emotions     │
-       │     → inbound = max(regex, ml-elevation-to-LOW)                  │
+       │ 1c. if regex AND ml == NONE: judge = await assess_llm_judge(...)  │
+       │     → inbound = max(regex, ml→LOW, judge→MEDIUM)                  │
        │ 2. pattern = assess_pattern(recent_user_msgs) ── multi-turn       │
        │ 3. effective_risk = max(inbound, pattern)                         │
        │ 4. state = get_conversation_state(cid)                            │
@@ -29,6 +30,7 @@
        │ 8. log to escalations:                                            │
        │      • input          if regex tripped on user message            │
        │      • ml-classifier  if regex was NONE but go_emotions flagged   │
+       │      • llm-judge      if regex+ml were NONE but the LLM judge did │
        │      • pattern        if pattern elevated beyond inbound          │
        │      • divergence     if effective NONE but bot mentioned 988     │
        │ 9. persist conversation + emit "done" event                       │
@@ -76,6 +78,7 @@
 | `app/main.py`                              | FastAPI routes; orchestrates regex → ML → pattern → LLM → outbound → DB. |
 | `app/guardrail.py`                         | Rule-based detector + multi-turn `assess_pattern`. Returns `RiskLevel`. |
 | `app/ml_classifier.py`                     | Second-tier emotion classifier (`SamLowe/roberta-base-go_emotions`); lazy load + fail open. |
+| `app/llm_judge.py`                         | Third-tier LLM judge over OpenRouter; conservative system prompt; cap MEDIUM; fail open. |
 | `app/llm.py`                               | OpenRouter HTTP client + risk-aware system prompts.             |
 | `app/crisis_resources.py`                  | Hotline list and the canned safe response template.             |
 | `app/db.py`                                | SQLite schema + helpers (save / log / list / acknowledge / state / dedup). |
@@ -115,11 +118,13 @@ pipeline fired the alert:
 |--------------------------------|-------------------------------------------------------------------------|
 | `input`                        | Inbound user message tripped the regex.                                 |
 | `ml-classifier`                | Inbound message wasn't caught by the regex but the second-tier emotion classifier flagged at least one negative-affect label above threshold. |
+| `llm-judge`                    | Inbound message wasn't caught by regex *or* the ML classifier; an LLM judge classified it as LOW/MEDIUM. The judge's one-sentence reason is embedded in `matched_signals`. |
 | `pattern`                      | Multi-turn aggregation: 3 consecutive non-NONE user messages.           |
 | `output`                       | Outbound LLM reply tripped the regex (unsafe content; reply replaced).  |
 | `divergence`                   | Effective risk was NONE but the LLM volunteered a crisis resource — surfaces a model-vs-policy mismatch. |
 | `input-while-paused`           | Inbound concern signal that arrived while a human reviewer had paused the bot. |
 | `ml-classifier-while-paused`   | Same, but the inbound classification came from the ML tier.            |
+| `llm-judge-while-paused`       | Same, but the inbound classification came from the LLM judge.          |
 
 ## Failure handling
 
@@ -191,3 +196,7 @@ See `.env.example` for the full list. Key env vars:
 | `ML_CLASSIFIER_MODEL` | `SamLowe/roberta-base-go_emotions` | HF model id |
 | `ML_CLASSIFIER_THRESHOLD` | `0.4` | Distress-label score threshold |
 | `ML_CLASSIFIER_MIN_WORDS` | `4` | Skip classifier on very short messages |
+| `ENABLE_LLM_JUDGE` | `true` | Toggle the third-tier LLM judge |
+| `LLM_JUDGE_MODEL` | *(empty → same as `OPENROUTER_MODEL`)* | Override model for judge calls |
+| `LLM_JUDGE_MIN_WORDS` | `6` | Skip judge on very short messages |
+| `LLM_JUDGE_TIMEOUT` | `10.0` | Max seconds to wait for the judge before failing open |

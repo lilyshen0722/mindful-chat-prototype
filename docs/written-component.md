@@ -61,17 +61,20 @@ course's emphasis on **human-in-the-loop**.
   weights mean classifier behavior is reproducible; 15 unit tests in
   `tests/test_guardrail.py` pin both per-level detector behavior and
   regressions for previously-missed phrasings.
-- **Manage.** Six mitigation layers are wired in:
+- **Manage.** Seven mitigation layers are wired in:
   (a) a second-tier emotion classifier (pinned
-  `SamLowe/roberta-base-go_emotions`, runs locally in the container)
-  catches oblique distress the regex misses; (b) outbound checks
-  replace unsafe LLM replies with a safe template; (c) a *divergence*
-  logger flags model drift when the LLM volunteers crisis resources on
-  a NONE-risk turn; (d) a multi-turn pattern detector elevates tone
-  when three consecutive distress signals appear; (e) every concern is
-  surfaced on `/admin` plus a per-conversation chat-style review page;
-  (f) the reviewer can *take over* — pausing the LLM and chatting with
-  the user as a human, with a visible "human reviewer engaged" badge.
+  `SamLowe/roberta-base-go_emotions`, runs locally) catches oblique
+  distress the regex misses; (b) a third-tier LLM judge (configurable
+  model, capped at MEDIUM by prompt design, fails open) catches
+  euphemistic ideation neither regex nor the emotion classifier can
+  cleanly own; (c) outbound checks replace unsafe LLM replies with a
+  safe template; (d) a *divergence* logger flags model drift when the
+  LLM volunteers crisis resources on a NONE-risk turn; (e) a
+  multi-turn pattern detector elevates tone when three consecutive
+  distress signals appear; (f) every concern is surfaced on `/admin`
+  plus a per-conversation chat-style review page; (g) the reviewer can
+  *take over* — pausing the LLM and chatting with the user as a human,
+  with a visible "human reviewer engaged" badge.
 
 Two course-specific commitments. First, **beneficence** is the reason
 the AI is *peer-like support* rather than a crisis substitute: it
@@ -113,15 +116,12 @@ production-ready" as the meta-threat (T11).
 
 ## 5. Limitations and honest caveats
 
-The biggest honest limitation is that the detector stack is still
-**English-only and non-clinical**. The regex tier patches iteratively
-as audit surfaces misses; the ML tier inherits the GoEmotions Reddit
-distribution and its demographic skew; neither claims clinical
-validity. Capping the ML tier at LOW (never MEDIUM/HIGH) is
-deliberate — emotion classification cannot responsibly fabricate
-clinical urgency. A production deployment would add a classifier
-fine-tuned on a clinical corpus, an LLM-judge tier for borderline
-cases, real reviewer auth + audit logs, and an upfront consent banner
-warning users that messages may be reviewed by a human. Each is
-documented in `docs/ethics-mapping.md` and `docs/threat-model.md`
-rather than hidden.
+The detector stack is **English-only and non-clinical**. Regex patches
+iteratively as audit surfaces misses; the ML tier inherits GoEmotions/
+Reddit demographic skew; the LLM-judge tier shares its training data's
+biases and is "AI evaluating AI" — a tension the course materials
+explicitly flag. Caps on each tier (ML at LOW, judge at MEDIUM) prevent
+fabricated clinical urgency. A production deployment would add a
+classifier fine-tuned on a clinical corpus, real reviewer auth + audit
+logs, and an upfront consent banner. Each is documented in
+`docs/ethics-mapping.md` and `docs/threat-model.md` rather than hidden.

@@ -232,9 +232,55 @@ should not take the system offline.
 
 **What a production deployment would add next.** A trained domain
 classifier (e.g., fine-tuned on CLPsych or a curated mental-health
-corpus rather than GoEmotions/Reddit), an LLM-judge third tier for
-borderline cases, and continuous re-evaluation of label thresholds
-against fresh ground-truth audited by clinical reviewers.
+corpus rather than GoEmotions/Reddit) plus continuous re-evaluation of
+label thresholds against fresh ground-truth audited by clinical
+reviewers.
+
+## Third-tier LLM-judge
+
+When the regex tier and the ML classifier *both* return NONE, a third
+tier — a configurable LLM acting as a safety classifier — is consulted.
+It receives the message and a strict system prompt asking for a
+structured `{risk, reason}` JSON classification. The judge's reason is
+embedded in `matched_signals` so reviewers can audit *why* it fired.
+
+**Why this tier exists:**
+
+- It catches the failure mode where regex misses a phrase semantically
+  *and* go_emotions classifies it as something outside our distress
+  label set (e.g., euphemistic suicidality reading as `desire` ≈ 0.80).
+- An LLM with a deliberately conservative system prompt can read the
+  message holistically — distinguishing "end this Zoom call" (NONE)
+  from "I'm just so done with everything, I want it all to be over"
+  (MEDIUM) — without us enumerating regex patterns for every
+  permutation.
+
+**Hard limit, by prompt design.** The judge is instructed to only
+return `NONE`, `LOW`, or `MEDIUM`. `HIGH` stays reserved for the
+regex tier's explicit plan/means/time signals. An LLM reading
+ambiguous text shouldn't fabricate clinical urgency.
+
+**Failure mode.** Fail open: provider quota, network flake, malformed
+JSON, empty content (some reasoning models exhaust their token budget
+on hidden reasoning before emitting any visible output) — all return
+NONE with a logged warning. The first two tiers still ran.
+
+**Latency disclosure.** A judge call adds ~1–2s before the chat stream
+starts. The user sees the typing-indicator dots that long. Toggle off
+via `ENABLE_LLM_JUDGE=false` for latency-sensitive demos. Skipped
+entirely for short messages (`LLM_JUDGE_MIN_WORDS`, default 6) and when
+the prior tiers already classified the message.
+
+**Reflexive ethics caveat.** This is "AI evaluating AI" — a topic the
+course materials specifically flag for scrutiny ("Drafting Ethics with
+AI: Is it ethically wise or logically sound to use LLMs to draft the
+very AI policies and ethical codes meant to govern them?"). We accept
+the critique and partially mitigate it three ways: (a) the judge
+cannot elevate to HIGH; (b) every judge classification is logged with
+its reasoning so a human reviewer audits the judgments, not just the
+outcomes; (c) the judge model is configurable, so an operator can
+deliberately route judge traffic to a *different vendor* than the chat
+LLM to avoid same-vendor cross-contamination.
 
 ## Known limitations
 
@@ -287,11 +333,12 @@ the threat-model entry where applicable.
    or HIGH) and by surfacing per-label scores in `matched_signals` so a
    reviewer can audit decisions; we do not pretend it's clinically
    validated.
-4. **No clinical-corpus classifier; no LLM-judge tier.** A production
-   deployment would add a classifier fine-tuned on a curated
-   mental-health corpus (e.g., CLPsych) audited by clinicians, plus an
-   LLM-judge third tier for borderline cases. Those are listed as
-   future work in the architecture doc.
+4. **No clinical-corpus classifier.** A production deployment would
+   add a classifier fine-tuned on a curated mental-health corpus
+   (e.g., CLPsych) audited by clinicians, replacing the consumer-data
+   GoEmotions classifier we ship. The LLM-judge third tier (now
+   wired) partially compensates for the missing clinical corpus, but
+   neither tier is clinically validated and neither claims to be.
 5. **No red-team / adversarial test cases shipped.** The prototype
    documents the need for red-teaming (and the course materials cite it
    as a discipline) but does not ship adversarial test cases. A future

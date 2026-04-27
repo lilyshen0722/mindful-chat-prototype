@@ -55,23 +55,32 @@ residual risk, and points at the concrete code or doc that addresses it.
 ### T2 — Distress message missed by all detectors
 
 - **Mitigations:**
-  1. First tier — regex with deliberately broad LOW patterns
-     (`app/guardrail.py.LOW_PATTERNS`).
+  1. First tier — regex with deliberately broad LOW patterns + iteratively
+     patched MEDIUM euphemism patterns (`app/guardrail.py.LOW_PATTERNS`,
+     `MEDIUM_PATTERNS`).
   2. Second tier — `SamLowe/roberta-base-go_emotions` classifier
      (`app/ml_classifier.py`). Catches phrases the regex misses
      (e.g., "I miss my old friends", "ugh today was rough").
-  3. Multi-turn pattern aggregator (`assess_pattern`) elevates risk when a
+  3. Third tier — LLM judge (`app/llm_judge.py`). Catches euphemistic
+     ideation and contextually-clear distress that neither regex nor
+     emotion classification owns cleanly.
+  4. Multi-turn pattern aggregator (`assess_pattern`) elevates risk when a
      conversation drifts concerning over multiple turns even if no single
      turn hits MEDIUM.
-  4. The full transcript is *always* visible to the reviewer in
+  5. The full transcript is *always* visible to the reviewer in
      `/admin/conversations/{cid}`, so a missed detector signal can still
      be caught by an attentive reviewer reading context.
-- **Residual risk:** detectors are English-only, both tiers reflect their
+- **Residual risk:** detectors are English-only; each tier reflects its
   data lineage's biases (regex ≈ author's English; ML ≈ Reddit
-  GoEmotions). Coded language, multilingual users, and adversarial
-  phrasing all leak through.
-- **Evidence:** `tests/test_guardrail.py::test_low_catches_*` and
-  `test_pattern_*`; smoke tests in `/tmp/smoke_ml.py`.
+  GoEmotions; LLM judge ≈ whatever its training corpus was). Coded
+  language, multilingual users, and adversarial phrasing all leak
+  through. The LLM judge is also "AI evaluating AI" — partially
+  mitigated by the cap at MEDIUM and audit logging of every judgment,
+  but worth scrutinizing per the course's "drafting ethics with AI"
+  critique.
+- **Evidence:** `tests/test_guardrail.py::test_low_catches_*`,
+  `test_medium_catches_*`, `test_pattern_*`; smoke tests in
+  `/tmp/smoke_ml.py` and `/tmp/smoke_judge.py`.
 
 ### T3 — False positive escalations burn out the reviewer
 
@@ -151,14 +160,17 @@ This was an actual bug found by Playwright smoke testing.
 - **Residual risk:** no CSRF tokens, no rate limiting. Acceptable for
   localhost demo; documented as inadequate for production.
 
-### T9 — ML classifier load failure
+### T9 — ML classifier or LLM-judge load/runtime failure
 
-- **Mitigation:** `app/ml_classifier.py` *fails open* — a failure to load
-  the model (HF unreachable, weights corrupted, etc.) logs a warning and
-  every subsequent call returns NONE. The regex tier still runs.
-- **Residual risk:** silent loss of the second tier could let oblique
-  distress slip through unnoticed. The container logs the warning, but
-  there is no alerting layer in this prototype.
+- **Mitigation:** both tiers *fail open*. `app/ml_classifier.py` returns
+  NONE if the model can't load (HF unreachable, weights corrupted).
+  `app/llm_judge.py` returns NONE on provider quota errors, malformed
+  JSON, empty content (some reasoning models exhaust their token budget
+  on hidden reasoning before emitting any visible output), or timeout.
+  Whichever tier fails, the others still run.
+- **Residual risk:** silent loss of a tier could let oblique distress
+  slip through unnoticed. The container logs the warning, but there is
+  no alerting layer in this prototype.
 
 ### T10 — Conversation_state race during takeover
 
