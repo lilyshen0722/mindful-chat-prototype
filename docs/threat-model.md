@@ -1,11 +1,11 @@
 # Threat model
 
-A structured walk through specific failure modes the prototype could
-exhibit, what mitigates each, what residual risk remains, and where the
-evidence lives. This document complements `docs/ethics-mapping.md` (which
-covers the *frameworks* the project aligns with) by making the *concrete*
-failure surface explicit. It directly serves the NIST AI RMF **Map**
-function ("identify potential risks and impacts").
+What can go wrong with this prototype, what mitigates each thing,
+what residual risk remains, and where the evidence lives. The
+companion to `docs/ethics-mapping.md`: that doc maps the project to
+the *frameworks*; this one names the *concrete* failure surface.
+Serves the NIST AI RMF Map function ("identify potential risks and
+impacts").
 
 ---
 

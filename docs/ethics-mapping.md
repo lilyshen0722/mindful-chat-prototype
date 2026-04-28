@@ -63,63 +63,55 @@ is addressed in the artifact:
 
 ## Design philosophy: peer-like support, not crisis substitute
 
-A central design question for any "mindful" chatbot is: *should the AI guide
-the user through difficult feelings, or should it hand off to a human as
-soon as anything concerning appears?*
+The core design question for a chatbot like this is: should the AI
+guide a user through hard feelings, or hand off to a human the moment
+anything concerning appears?
 
-This prototype takes a **tiered, peer-like-support stance** rather than an
-"escalate-and-stop" stance. The reasoning:
+I picked the first framing. A few reasons:
 
-- The vast majority of "negative" content in everyday chat is normal venting
-  — frustration with school, work, relationships, ordinary sadness. Pushing
-  crisis hotlines on these turns is dismissive, burns out human reviewers
-  with false-positive escalations, and discourages the user from continuing.
-- For genuinely concerning content, an immediate handoff that ends the
-  conversation can feel rejecting and may discourage the user from seeking
-  further help. Real systems (e.g., Crisis Text Line) use AI for *triage*
-  but trained humans for the actual crisis chat — but they keep the user
-  engaged, not bounced.
-- The AI is therefore designed to engage warmly across the full risk
-  spectrum, with the *intensity of resource mention* scaling with the
-  guardrail signal (NONE = none, LOW = none, MEDIUM = one soft mention,
-  HIGH = urgent + safety check). Outbound guardrail and the human-in-the-
-  loop admin queue provide the safety floor.
+- Most "negative" content in everyday chat is normal venting:
+  frustration with school, work, relationships, ordinary sadness.
+  Pushing crisis hotlines on those turns is dismissive, burns out
+  reviewers with false positives, and trains people not to disclose
+  anything real.
+- For genuinely concerning content, an abrupt handoff that ends the
+  conversation can feel rejecting. Crisis Text Line and similar
+  services use AI for triage but keep the user *engaged* with a
+  trained human, not bounced.
+- So the AI is meant to engage warmly across the whole risk spectrum,
+  with the intensity of resource mention scaling with the signal
+  (NONE = none, LOW = none, MEDIUM = one soft mention, HIGH = urgent
+  + safety check). The outbound guardrail and the admin queue are
+  the safety floor.
 
-The principle, encoded in the system prompt and enforced by tests:
+The rule encoded in the system prompt and the tests:
 
-> The AI is **peer-like support**, not a substitute for crisis care. It
-> can listen, validate, and encourage talking to professionals. It must
-> NEVER diagnose, prescribe, suggest methods, or guide the user toward
+> The AI is peer-like support, not crisis care. It can listen,
+> validate, and encourage talking to professionals. It must never
+> diagnose, prescribe, suggest methods, or guide the user toward
 > harmful action.
 
-A more conservative design — "AI triages, humans take over" — is
-defensible and would be appropriate for any high-stakes deployment. The
-prototype actually supports both modes: by default the AI engages across
-all risk levels, but a reviewer can **pause the bot** for any conversation
-from the admin dashboard. While paused, the LLM is bypassed entirely and
-user messages get a short notice that a human is engaged; the reviewer can
-then chat directly with the user. This means the *same artifact* can
-demonstrate the tiered-engagement design and the conservative
-triage-and-handoff design, depending on how a reviewer chooses to operate
-it.
+A more conservative "AI triages, humans take over" stance is also
+defensible, especially for high-stakes deployments. The prototype
+supports both: by default the AI engages across risk levels, but a
+reviewer can pause the bot from the admin dashboard. Paused
+conversations bypass the LLM and surface a notice that a human is
+engaged; the reviewer chats with the user directly. The same artifact
+runs both modes depending on operator choice.
 
-### Takeover transparency: hybrid attribution
+### Takeover transparency
 
-When a reviewer sends a message, it renders in the user's chat with the
-same bubble shape as a bot reply, *plus* (a) a small italic caption
-"answered by a human reviewer" beneath the bubble, and (b) a persistent
-"human reviewer engaged" badge in the chat header while the conversation
-is paused. The bubble shape is shared with the bot intentionally — the
-reviewer is "answering as the bot" so the user's mental model stays
-continuous — but the caption and header badge keep the handoff visible.
+When a reviewer sends a message, the user sees a normal-shaped bot
+bubble with a small italic caption ("answered by a human reviewer")
+underneath. The conversation header carries a persistent "human
+reviewer engaged" badge while paused.
 
-A fully covert takeover (no caption, no badge) was rejected: it would
-violate the course's transparency principle and the Belmont commitment to
-respect for persons. A loud takeover with a distinct bubble color was
-also rejected because it makes the reviewer feel like a different system
-bolted on, which discourages reviewers from intervening at all. The
-hybrid keeps the audit trail honest while preserving conversational
-continuity.
+I considered two alternatives and rejected both. A fully covert
+takeover (no caption, no badge) violates the transparency principle
+and Belmont's respect-for-persons. A loud takeover with a distinct
+bubble color makes the reviewer feel bolted on, which discourages
+intervention. The hybrid keeps the audit trail honest while
+preserving conversational continuity.
 
 ### When does AI guide vs. hand off? (Operational rules encoded in code)
 
@@ -171,116 +163,114 @@ safe template. If a hard handoff is needed, the reviewer pauses the bot.
 ## Multi-conversation context
 
 A single browser can hold multiple parallel conversations: the client
-keeps a list of `conversation_id`s in `localStorage` and the user can
-switch between them via a sidebar. This is intentional for two reasons.
-First, "New conversation" should not erase prior context — a user (and a
-reviewer) need to be able to refer back to earlier threads. Second, the
-prototype is single-user-per-browser by design: there is no `users`
-table, no account creation, no PII collected. A `conversation_id` is an
-opaque UUID generated client-side, which means the only thing the server
-can attribute to a "person" is a browser's view of localStorage. This is
-intentional and worth surfacing as both a privacy property (no PII) and
-a limitation (a real deployment with multi-device sync would need real
-identity, with all the data-handling obligations that brings).
+stores a list of `conversation_id`s in `localStorage` and the user
+switches between them via a sidebar. Two reasons:
 
-## Second-tier emotion classifier (ML tier)
+- "New conversation" should not erase prior context. A user (or a
+  reviewer auditing them) needs to be able to refer back to earlier
+  threads.
+- The prototype is single-user-per-browser. There is no `users`
+  table, no account creation, no PII collected. A `conversation_id`
+  is an opaque UUID generated client-side, so the only thing the
+  server can attribute to a person is a browser's view of
+  localStorage.
 
-To close coverage gaps that the regex tier inevitably has, a second tier
-runs `SamLowe/roberta-base-go_emotions` (a pretrained 28-emotion
-multi-label classifier from Hugging Face) on every inbound message that
-the regex didn't already classify. If any of a deliberately conservative
-set of negative-affect labels (`sadness`, `grief`, `disappointment`,
-`remorse`, `fear`, `nervousness`) crosses the configured threshold, the
-inbound risk is elevated to `LOW` and the row is logged to the admin
-queue with `source=ml-classifier` and the per-label scores embedded in
-`matched_signals` for audit.
+This is both a privacy property (no PII) and a limitation (a real
+deployment with multi-device sync would need real identity, with all
+the data-handling obligations that come with it).
 
-**Why this model and this design:**
+## Second-tier emotion classifier
 
-- *NIST AI RMF Govern.* The model weights are pinned (specific HF repo
-  + specific revision shipped via the Docker image). A reviewer can
-  inspect the model card, the dataset (GoEmotions = Reddit comments
-  labeled by crowd workers), and the inference path. By contrast, an
-  LLM-judge tier would route to a third-party model that can change
-  without notice.
-- *NIST AI RMF Map.* The dataset's known biases — English-only, Reddit
-  demographic skew, US-cultural framing of emotion words, possible
-  noise in crowd labels — are nameable and citable rather than opaque.
-- *NIST AI RMF Measure.* Frozen weights + deterministic inference mean
-  the test suite stays meaningful over time. A regression test can
-  pin "this phrase produces sadness ≥ 0.5" forever.
-- *Belmont (Respect for Persons).* The classifier runs locally inside
-  the same container; no additional user data egress to a third party
-  beyond the LLM call we already make for the chat reply itself.
-- *Course theme — interpretability and "scientism".* The classifier
-  is *more* auditable than another LLM, not less. Per-message label
-  scores let a reviewer interrogate "why did this fire?" — the kind
-  of artifact the course materials repeatedly call for.
+To close gaps the regex tier inevitably has, the second tier runs
+`SamLowe/roberta-base-go_emotions` (a pretrained 28-emotion
+multi-label classifier from Hugging Face) on inbound messages the
+regex didn't already classify. When any of a conservative
+negative-affect label set (`sadness`, `grief`, `disappointment`,
+`remorse`, `fear`, `nervousness`) crosses the threshold, the message
+is elevated to `LOW` and logged with `source=ml-classifier`. The
+per-label scores go into `matched_signals` for audit.
 
-**Hard limit, by design.** The classifier can only ELEVATE inbound risk
-from `NONE` to `LOW`. `MEDIUM` and `HIGH` stay reserved for explicit
-ideation/plan/means signals from the regex tier and from the multi-turn
-pattern aggregator. An emotion classifier should not fabricate clinical
-urgency from emotional tone — that would be the kind of overreach the
-course's "scientism" critique warns against.
+Why this model:
 
-**Failure mode.** If the model fails to load (e.g., HF unreachable in a
-new build, weights corrupted), the classifier *fails open*: a warning
-is logged, every call returns `NONE`, and the chat continues to operate
-on the regex tier alone. This is intentional — a broken second tier
-should not take the system offline.
+- **Govern.** Weights are pinned (specific HF repo + revision baked
+  into the Docker image). A reviewer can inspect the model card, the
+  dataset (GoEmotions, which is Reddit comments labeled by crowd
+  workers), and the inference path. An opaque vendor LLM in this
+  slot would route to a model that could change without notice.
+- **Map.** The dataset's known biases — English-only, Reddit
+  demographic skew, US-cultural framing, label noise — are nameable
+  and citable instead of opaque.
+- **Measure.** Frozen weights mean a regression test can pin "this
+  phrase produces `sadness ≥ 0.5`" indefinitely.
+- **Respect for persons.** The classifier runs locally; no extra
+  user-data egress beyond the chat LLM call we already make.
+- **Course theme: scientism.** Per-message label scores in the audit
+  log let a reviewer interrogate "why did this fire?" That's the
+  kind of artifact the course materials kept calling for, and it's
+  more interpretable than another LLM in the same slot.
 
-**What a production deployment would add next.** A trained domain
-classifier (e.g., fine-tuned on CLPsych or a curated mental-health
-corpus rather than GoEmotions/Reddit) plus continuous re-evaluation of
-label thresholds against fresh ground-truth audited by clinical
-reviewers.
+**Hard cap at LOW.** `MEDIUM` and `HIGH` stay reserved for the regex
+tier's explicit ideation/plan/means signals. An emotion classifier
+shouldn't fabricate clinical urgency from emotional tone — that's
+the overreach the course's scientism critique warns about.
+
+**Failure mode.** If the model fails to load (HF unreachable, weights
+corrupted), the classifier fails open: a warning is logged, calls
+return `NONE`, the regex tier carries on. A broken second tier
+should not take the chat offline.
+
+**Next step in a production deployment.** A classifier fine-tuned on
+a clinical corpus (CLPsych or similar) audited by clinicians, plus
+continuous threshold re-evaluation against fresh ground truth.
 
 ## Third-tier LLM-judge
 
-When the regex tier and the ML classifier *both* return NONE, a third
-tier — a configurable LLM acting as a safety classifier — is consulted.
-It receives the message and a strict system prompt asking for a
-structured `{risk, reason}` JSON classification. The judge's reason is
-embedded in `matched_signals` so reviewers can audit *why* it fired.
+When the regex tier and the ML classifier both return NONE, the
+third tier consults a configurable LLM acting as a safety
+classifier. It receives the message plus a strict system prompt that
+asks for a structured `{risk, reason}` JSON classification. The
+judge's one-sentence reason ends up in `matched_signals` so
+reviewers can audit why it fired.
 
-**Why this tier exists:**
+Why this tier exists at all: regex can miss a phrase semantically,
+and go_emotions can classify the same phrase as something outside
+the distress label set. Euphemistic suicidality is the canonical
+example — `"I want to end everything"` reads as `desire ≈ 0.80` to
+go_emotions, which we deliberately exclude from the distress set
+because adding it would over-trigger on benign wants. An LLM with a
+conservative system prompt can read the message holistically —
+distinguishing "end this Zoom call" from "I'm just so done with
+everything, I want it all to be over" — without us enumerating
+regex patterns for every permutation.
 
-- It catches the failure mode where regex misses a phrase semantically
-  *and* go_emotions classifies it as something outside our distress
-  label set (e.g., euphemistic suicidality reading as `desire` ≈ 0.80).
-- An LLM with a deliberately conservative system prompt can read the
-  message holistically — distinguishing "end this Zoom call" (NONE)
-  from "I'm just so done with everything, I want it all to be over"
-  (MEDIUM) — without us enumerating regex patterns for every
-  permutation.
+**Hard cap at MEDIUM.** The system prompt explicitly tells the judge
+to only return `NONE`, `LOW`, or `MEDIUM`. `HIGH` stays reserved for
+the regex tier's plan/means/time signals; an LLM reading ambiguous
+text shouldn't fabricate clinical urgency.
 
-**Hard limit, by prompt design.** The judge is instructed to only
-return `NONE`, `LOW`, or `MEDIUM`. `HIGH` stays reserved for the
-regex tier's explicit plan/means/time signals. An LLM reading
-ambiguous text shouldn't fabricate clinical urgency.
+**Failure mode.** Fails open. Provider quota errors, network blips,
+malformed JSON, empty content (some reasoning models burn the whole
+token budget on hidden reasoning before emitting any visible output)
+all return NONE with a logged warning, while the first two tiers
+still run.
 
-**Failure mode.** Fail open: provider quota, network flake, malformed
-JSON, empty content (some reasoning models exhaust their token budget
-on hidden reasoning before emitting any visible output) — all return
-NONE with a logged warning. The first two tiers still ran.
+**Latency.** A judge call adds about 1–2 seconds before the chat
+stream starts. Toggle off via `ENABLE_LLM_JUDGE=false` for
+latency-sensitive demos. Skipped on short messages (default
+`LLM_JUDGE_MIN_WORDS=6`) and whenever the prior tiers already
+classified the message.
 
-**Latency disclosure.** A judge call adds ~1–2s before the chat stream
-starts. The user sees the typing-indicator dots that long. Toggle off
-via `ENABLE_LLM_JUDGE=false` for latency-sensitive demos. Skipped
-entirely for short messages (`LLM_JUDGE_MIN_WORDS`, default 6) and when
-the prior tiers already classified the message.
-
-**Reflexive ethics caveat.** This is "AI evaluating AI" — a topic the
-course materials specifically flag for scrutiny ("Drafting Ethics with
-AI: Is it ethically wise or logically sound to use LLMs to draft the
-very AI policies and ethical codes meant to govern them?"). We accept
-the critique and partially mitigate it three ways: (a) the judge
-cannot elevate to HIGH; (b) every judge classification is logged with
-its reasoning so a human reviewer audits the judgments, not just the
-outcomes; (c) the judge model is configurable, so an operator can
-deliberately route judge traffic to a *different vendor* than the chat
-LLM to avoid same-vendor cross-contamination.
+**Reflexive caveat.** This is "AI evaluating AI", which the course
+materials flag specifically as a thing to scrutinize ("Drafting
+Ethics with AI: Is it ethically wise or logically sound to use LLMs
+to draft the very AI policies meant to govern them?"). I accept the
+critique and partially mitigate it three ways: the judge can't
+elevate to HIGH; every classification is logged with the judge's
+reasoning so humans audit the judgments and not just the outcomes;
+the judge model is configurable, so an operator can route judge
+traffic to a different vendor than the chat LLM to avoid
+same-vendor cross-contamination. None of those make the tension go
+away.
 
 ## Known limitations
 

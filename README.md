@@ -6,28 +6,38 @@
 > **Crisis Text Line** (text **HOME** to **741741**),
 > or see https://www.iasp.info for international resources.
 
-A demonstration of an *advisory* guardrail layered around an LLM-powered
-chatbot. The bot itself is meant to feel like a normal chat assistant —
-the guardrail does NOT replace its replies. Instead it (a) detects
-distress and self-harm language via a regex tier, (b) when regex finds
-nothing, runs a second-tier emotion classifier
-(`SamLowe/roberta-base-go_emotions`) to catch oblique phrasings, (c)
-when both regex and ML say NONE, runs a third-tier LLM-judge that
-catches euphemistic ideation neither earlier tier owns cleanly, (d)
-modulates the LLM's system prompt so it responds with the right tone
-(curious on LOW, validating + gently mentioning 988 on MEDIUM, urgent
-on HIGH), (e) softly appends crisis resources only if the model failed
-to, (f) flags *divergence* when the model volunteers crisis resources
-on a NONE-risk turn, (g) elevates tone when several consecutive turns
-show distress (multi-turn pattern aggregation), and (h) routes every
-concern signal to a simulated administrator review queue so a
-human-in-the-loop can audit, open any conversation in a chat-style
-review page, and **take over** (pause the bot, send messages as the
-reviewer). The only paths that override the model's reply are the
-outbound guardrail (replaces unsafe LLM content with a safe template)
-and an explicit reviewer pause.
+An advisory guardrail layered around an LLM chatbot. The bot is
+supposed to feel like a normal chat assistant. The guardrail does not
+replace its replies; it sits in front and behind the model and routes
+concerning conversations to a human reviewer.
 
-Built for **DSCI 305 (Spring 2026)** — final project on data/AI ethics.
+Three detector tiers run on every user message:
+
+1. **Regex** for explicit distress and euphemistic ideation.
+2. **`SamLowe/roberta-base-go_emotions`** as a second-tier emotion
+   classifier when the regex returns NONE.
+3. **An LLM-judge** as a third tier when both prior layers return
+   NONE.
+
+Whatever risk level the tiers settle on tunes the chat LLM's system
+prompt: curious on LOW, validating with a soft 988 mention on MEDIUM,
+urgent on HIGH. The bot's reply is then itself checked by an outbound
+regex; unsafe content is replaced with a canned safe template.
+
+The reviewer dashboard at `/admin` shows every flagged turn, the
+detector source that fired it, and the matched evidence (regex match,
+ML score, or judge reasoning). Click into any conversation for a
+chat-style review page where the reviewer can pause the bot and send
+messages as a human. The user sees a "human reviewer engaged" badge so
+the takeover is visible.
+
+Two extra signals also feed the queue: a *divergence* logger that
+flags when the LLM volunteers 988 on a NONE-risk turn, and a
+multi-turn pattern aggregator that elevates tone when several
+consecutive turns show distress.
+
+Built for DSCI 305 (Spring 2026) — final project on data and AI
+ethics. AI assistance disclosed in [`AI_USAGE.md`](AI_USAGE.md).
 
 ---
 
