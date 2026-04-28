@@ -260,9 +260,11 @@ A 5-minute walkthrough covering each rubric-relevant behavior. Run after
     message ("I just feel weird today"). Some LLMs volunteer 988 anyway;
     if so, a `divergence` row appears.
 
-Every step has a corresponding line in `tests/test_guardrail.py` or a
-Playwright smoke test under `/tmp/smoke_*.py` (kept out of the repo since
-they exercise external services).
+Every regex-tier step has a corresponding line in
+`tests/test_guardrail.py`. The ML and LLM-judge tiers are verified by
+Playwright + httpx smoke runs against a live container (kept out of
+the repo since they require a running OpenRouter key and the loaded
+HF classifier).
 
 ---
 

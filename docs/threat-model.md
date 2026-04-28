@@ -79,8 +79,10 @@ residual risk, and points at the concrete code or doc that addresses it.
   but worth scrutinizing per the course's "drafting ethics with AI"
   critique.
 - **Evidence:** `tests/test_guardrail.py::test_low_catches_*`,
-  `test_medium_catches_*`, `test_pattern_*`; smoke tests in
-  `/tmp/smoke_ml.py` and `/tmp/smoke_judge.py`.
+  `test_medium_catches_*`, `test_pattern_*`; ML and judge tiers
+  exercised via Playwright + httpx smoke scripts run against a live
+  container (not committed because they require a running OpenRouter
+  key and the loaded HF classifier).
 
 ### T3 — False positive escalations burn out the reviewer
 
@@ -93,22 +95,23 @@ residual risk, and points at the concrete code or doc that addresses it.
 - **Residual risk:** song lyrics, third-person discussion ("my friend
   said she wants to die"), and quoted text will still trip the regex.
   Reviewer must be trained to read the surrounding context.
-- **Evidence:** `app/main.py` source-routing logic; smoke tests in
-  `/tmp/smoke_dedup.py`.
+- **Evidence:** `app/main.py` source-routing logic; verified by
+  Playwright smoke run against a live container (5 LOWs in a row →
+  exactly 1 pattern row; ack → fresh pattern row fires on next LOW).
 
 ### T4 — Disconnect mid-stream silently drops the safety signal
 
-This was an actual bug found by Playwright smoke testing.
+This was an actual bug found by smoke testing in the browser.
 
-- **Mitigation (commit `b911e8e`):** inbound + pattern logging happens
-  *before* the SSE generator begins streaming, so a client disconnect
-  that cancels the generator can't lose the inbound signal.
+- **Mitigation:** inbound + pattern logging happens *before* the SSE
+  generator begins streaming, so a client disconnect that cancels the
+  generator can't lose the inbound signal. The relevant logic lives at
+  the top of the `chat_endpoint` handler in `app/main.py`.
 - **Residual risk:** outbound and divergence checks still run inside the
   generator (they require the full reply). A client that disconnects
-  before the LLM finishes will lose those — but those are detector signals
-  on the bot's *own* output, and the bot's reply also wasn't seen by the
-  user, so the harm surface is bounded.
-- **Evidence:** commit `b911e8e` test rationale.
+  before the LLM finishes will lose those — but those are detector
+  signals on the bot's *own* output, and the bot's reply also wasn't
+  seen by the user, so the harm surface is bounded.
 
 ### T5 — Reviewer impersonation / takeover misuse
 

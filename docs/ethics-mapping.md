@@ -156,9 +156,11 @@ safe template. If a hard handoff is needed, the reviewer pauses the bot.
 - **Reproducibility.** The detector is rule-based and version-controlled, so
   any researcher can trace why a given message was classified the way it
   was. Tests cover each risk level.
-- **Transparency vs. protection.** The repo is private during the course,
-  the SQLite database is local-only, and the `.env` file is gitignored —
-  protecting any test data — while the code is fully transparent.
+- **Transparency vs. protection.** The SQLite database is local-only,
+  the `.env` file is gitignored (so any test data + the OpenRouter key
+  stay off GitHub), and the code is otherwise fully open for review.
+  Anyone forking this should swap the default admin password and
+  re-issue an OpenRouter key before running.
 
 ## Multi-conversation context
 

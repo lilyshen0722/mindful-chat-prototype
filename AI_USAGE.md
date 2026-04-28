@@ -44,7 +44,7 @@ This document follows the DSCI 305 syllabus's AI Policy:
 | **Editing assistance** | Tightened sentences, hit word-count budgets, removed AI-tell phrasing on request. | Decided what to keep and what to cut. |
 | **Code annotation** | Added comments where I asked. | Read and trimmed where the comments were obvious. |
 | **Analysis** | Helped me reason through which framework (NIST vs. EU AI Act) and which second-tier (HF model vs. LLM-judge) fit best for the rubric, by listing tradeoffs. | Made the calls. The tradeoff tables are AI-summarized but my conclusions. |
-| **Smoke testing** | Wrote Playwright test scripts under `/tmp/smoke_*.py`, ran them in a real browser against the running container, surfaced failing assertions. | Specified what to test for each feature; reviewed the failures. |
+| **Smoke testing** | Wrote Playwright + httpx smoke scripts that drive the running container in a real browser and surface failing assertions. Scripts are not committed because they need a live OpenRouter key and the loaded HF classifier. | Specified what to test for each feature; reviewed the failures. |
 | **Git operations** | Drafted commit messages; performed force-push for history rewrite (after my explicit go-ahead). | Approved every commit and every push. |
 
 ## (c) Key prompts
