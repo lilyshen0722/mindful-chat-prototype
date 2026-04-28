@@ -219,26 +219,44 @@ A 5-minute walkthrough covering each rubric-relevant behavior. Run after
     all to be over". Regex misses (no enumerated euphemism), the ML
     classifier reads it as `desire`, and the third-tier judge picks it up
     as `risk=medium` with a one-sentence reason in `matched_signals`.
+
+   The user side of a real conversation that hit several tiers:
+
+   ![User chat: escalating distress, tone-modulated bot reply](../screenshots/user-view.png)
+
 4. **Pattern.** Send three LOW-tone messages in a row in a fresh conversation.
    First two log as `input`. Third also logs a `pattern` row at MEDIUM —
    bot tone elevates with a gentle 988 mention.
-5. **Acknowledge.** Click Acknowledge on the pattern row. It greys out.
-6. **Open conversation.** Click the cid (or **Open**). You land on the
+5. **Inspect the queue.** All escalation rows from the steps above appear
+   in `/admin`, distinguished by `Source` (regex `input`, `ml-classifier`,
+   `llm-judge`) and per-row state badges:
+
+   ![Admin escalation queue with mixed sources and state badges](../screenshots/escalation-view.png)
+
+6. **Acknowledge.** Click Acknowledge on the pattern row. It greys out.
+7. **Open conversation.** Click the cid (or **Open**). You land on the
    chat-style review page; user messages on the left, bot on the right;
-   escalation list on the right.
-7. **Take over.** Click "Take over". Confirm. The state badge flips to
+   escalation sidebar on the right.
+
+   ![Per-conversation chat-style review page](../screenshots/reviewer-view.png)
+
+8. **Take over.** Click "Take over". Confirm. The state badge flips to
    "human reviewer engaged".
-8. **Reviewer message.** From the composer at the bottom, type "Hi —
-   checking in. How are you doing right now?" → Send. Switch to the user
-   tab → header shows "human reviewer engaged" badge, message appears as
-   a bot-style bubble with the "answered by a human reviewer" caption.
-9. **Paused chat.** From the user tab, type another message. Bot is
-   bypassed; user sees a notice that a reviewer is engaged. Admin's
-   escalation list keeps growing if the user trips a detector while paused
-   (`source=input-while-paused`).
-10. **Resume.** Click "Resume bot". State flips back. New user messages
+9. **Reviewer message.** From the composer at the bottom, type "Hi —
+   checking in. How are you doing right now?" → Send. The bubble lands
+   in-flow with explicit attribution on the admin side; on the user side
+   it shows as a normal-shaped bot bubble with a small italic
+   "answered by a human reviewer" caption.
+
+   ![Reviewer composes a message after the bot reply; the right-side escalation sidebar shows the open MEDIUM row](../screenshots/reviewer-take-over.png)
+
+10. **Paused chat.** From the user tab, type another message. Bot is
+    bypassed; user sees a notice that a reviewer is engaged. Admin's
+    escalation list keeps growing if the user trips a detector while paused
+    (`source=input-while-paused`).
+11. **Resume.** Click "Resume bot". State flips back. New user messages
     get bot replies normally.
-11. **Divergence (optional, non-deterministic).** Send a borderline-vague
+12. **Divergence (optional, non-deterministic).** Send a borderline-vague
     message ("I just feel weird today"). Some LLMs volunteer 988 anyway;
     if so, a `divergence` row appears.
 

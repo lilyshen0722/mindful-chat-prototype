@@ -73,6 +73,53 @@ false-negative modes, documented in `docs/ethics-mapping.md`
 
 See `docs/architecture.md` for a more detailed walkthrough.
 
+## Screenshots
+
+What the four user-facing surfaces look like in practice. The full
+`docs/user-guide.md` walks through each in detail.
+
+### User chat
+
+Persistent 988 banner; sidebar of past conversations on the left
+(omitted from this crop); risk classifications are intentionally not
+shown to the user. The bot's reply tone scales with the inbound
+classification — note the gentle 988 mention triggered by the MEDIUM
+euphemistic phrasing.
+
+![User chat showing escalating distress and a tone-modulated bot reply](screenshots/user-view.png)
+
+### Admin escalation queue
+
+Every flagged turn lands here. The `Source` column tells the reviewer
+which detector tier fired (`input` = regex, `ml-classifier` =
+go_emotions, `llm-judge` = LLM judge). `Matched signals` carries
+per-tier evidence — a regex match, an ML score, or the judge's
+one-sentence reason. State badges on each conversation show whether
+the bot is still active or a reviewer has taken over.
+
+![Admin escalation queue showing rows from regex, ML, and LLM-judge tiers](screenshots/escalation-view.png)
+
+### Per-conversation chat-style review
+
+Click any `conversation_id` (or the `Open` button) to land here. The
+bubbles are arranged from the reviewer's perspective: user on the
+left, bot/reviewer on the right. The right sidebar lists every
+escalation row for this conversation with quick-Ack buttons. The
+composer at the bottom sends as a human reviewer.
+
+![Reviewer's chat-style focused view of one conversation](screenshots/reviewer-view.png)
+
+### Reviewer taking over
+
+A reviewer message rendered after the bot's reply. On the user's side
+this appears as a normal-shaped bot bubble with a small italic
+"answered by a human reviewer" caption beneath; on the admin side the
+attribution is explicit (`human reviewer · timestamp`). The hint
+under the composer reminds the reviewer that pausing the bot is a
+separate action from sending a reviewer message.
+
+![Reviewer composing a message after the bot replied; escalation sidebar shows the open MEDIUM row](screenshots/reviewer-take-over.png)
+
 ## Quick start (Docker Compose)
 
 ```bash
