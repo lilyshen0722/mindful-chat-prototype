@@ -1,9 +1,5 @@
 # AI usage disclosure
 
-> ⚠️ Draft — please edit in your own voice before submission. The
-> syllabus disclosure spec (tools / how / key prompts) is below, plus
-> a reflection on what I decided vs. what AI implemented.
-
 This document follows the DSCI 305 syllabus's AI Policy:
 
 > **Disclosure Requirements.** When using AI tools (ChatGPT, Claude,
