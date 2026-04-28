@@ -2,57 +2,66 @@
 
 ## High-level dataflow
 
-```
-       ┌──────────────────┐
-  user │   Browser (chat) │  ── localStorage holds the cid list (multi-conv switcher)
-       └────────┬─────────┘     and polls every 4s for reviewer messages + state
-                │  POST /api/chat   (Server-Sent Events response)
-                ▼
-       ┌──────────────────────────────────────────────────────────────────┐
-       │ FastAPI app (app/main.py)                                         │
-       │                                                                   │
-       │ 1. regex = assess(user_message)               ── single-message   │
-       │ 1b. if regex == NONE: ml = assess_ml(...)      ── go_emotions     │
-       │ 1c. if regex AND ml == NONE: judge = await assess_llm_judge(...)  │
-       │     → inbound = max(regex, ml→LOW, judge→MEDIUM)                  │
-       │ 2. pattern = assess_pattern(recent_user_msgs) ── multi-turn       │
-       │ 3. effective_risk = max(inbound, pattern)                         │
-       │ 4. state = get_conversation_state(cid)                            │
-       │      ├─ "human" (paused) → skip LLM; return notice; log inbound  │
-       │      │                     concern as input-while-paused          │
-       │      └─ "bot" → continue                                          │
-       │ 5. system_prompt = build_system_prompt(effective_risk)            │
-       │ 6. stream OpenRouter → yield tokens to client                     │
-       │ 7. outbound = assess(full_reply)                                  │
-       │      ├─ unsafe?  → "replace" with safe template; escalations(output)│
-       │      └─ safe but effective_risk MEDIUM/HIGH and no resource       │
-       │         mentioned → emit short footer                              │
-       │ 8. log to escalations:                                            │
-       │      • input          if regex tripped on user message            │
-       │      • ml-classifier  if regex was NONE but go_emotions flagged   │
-       │      • llm-judge      if regex+ml were NONE but the LLM judge did │
-       │      • pattern        if pattern elevated beyond inbound          │
-       │      • divergence     if effective NONE but bot mentioned 988     │
-       │ 9. persist conversation + emit "done" event                       │
-       └────────┬──────────────────────────────────┬───────────────────────┘
-                │ writes                           │ writes
-                ▼                                  ▼
-       ┌────────────────┐                ┌────────────────────┐
-       │ conversations  │                │   escalations      │
-       │   (sqlite)     │                │     (sqlite)       │
-       └────────────────┘                └─────────┬──────────┘
-                                                   │ read
-                ┌────────────────────┐             │
-                │ conversation_state │◀── pause/resume/send via admin API
-                │     (sqlite)       │             │
-                └─────────┬──────────┘             ▼
-                          │              ┌──────────────────────────────┐
-                          │              │ /admin dashboard             │
-                          │              │ HTTP Basic auth              │
-                          └─── read ────▶│ list + ack/notes + take over │ ── reviewer
-                                         │ + /admin/conversations/{cid} │   (human-in-the-loop)
-                                         │   chat-style focused view    │
-                                         └──────────────────────────────┘
+```mermaid
+flowchart TB
+    User["Browser (chat UI)<br/>localStorage cid list<br/>polls /messages + /state every 4s"]
+    Reviewer(["Human reviewer"])
+
+    User -->|"POST /api/chat (SSE)"| App
+
+    subgraph App["FastAPI · app/main.py"]
+        direction TB
+        Regex["1 · regex assess<br/>(NONE / LOW / MEDIUM / HIGH)"]
+        ML["2 · ML classifier<br/>go_emotions → LOW only"]
+        Judge["3 · LLM judge<br/>→ NONE / LOW / MEDIUM"]
+        Pattern["multi-turn pattern<br/>(rolling 3-msg window)"]
+        Effective["effective_risk =<br/>max(inbound, pattern)"]
+        State{"state == human?"}
+        Paused["skip LLM<br/>send paused notice<br/>source = *-while-paused"]
+        Prompt["build risk-aware<br/>system prompt"]
+        Chat["stream OpenRouter LLM"]
+        Outbound["outbound regex assess<br/>(unsafe → replace with<br/>safe template)"]
+        Done["emit done event"]
+
+        Regex -->|"NONE"| ML
+        Regex -->|"LOW/MED/HIGH"| Effective
+        ML -->|"NONE"| Judge
+        ML -->|"LOW"| Effective
+        Judge -->|"any"| Effective
+        Pattern --> Effective
+        Effective --> State
+        State -->|"yes"| Paused
+        State -->|"no"| Prompt
+        Prompt --> Chat
+        Chat --> Outbound
+        Outbound --> Done
+    end
+
+    App -->|"writes user + bot msgs"| Conv[("conversations")]
+    App -->|"writes input / ml-classifier /<br/>llm-judge / pattern / output /<br/>divergence rows"| Esc[("escalations")]
+    AdminAPI -->|"upsert"| ConvState[("conversation_state")]
+
+    Esc --> Admin
+    ConvState --> Admin
+    Conv --> Admin
+
+    subgraph AdminUI["/admin (HTTP Basic)"]
+        Admin["dashboard:<br/>list + ack + notes"]
+        Focused["/admin/conversations/{cid}<br/>chat-style review"]
+        Admin --> Focused
+    end
+
+    Reviewer --> Admin
+    Reviewer -->|"pause / resume / send msg"| AdminAPI[/"/api/admin/conversations/{cid}/*"/]
+    Done -->|"SSE tokens"| User
+    Paused -->|"SSE notice"| User
+
+    classDef tier fill:#eef4ff,stroke:#3b6cd1,color:#1d3a78
+    classDef store fill:#f4f2eb,stroke:#6b6b6b,color:#2a2a2a
+    classDef human fill:#f3eee2,stroke:#2f6f5e,color:#2f6f5e
+    class Regex,ML,Judge,Pattern,Outbound tier
+    class Conv,Esc,ConvState store
+    class Reviewer,Admin,Focused human
 ```
 
 **Key design choices.**
@@ -102,14 +111,45 @@ achievable inside one process and one Docker container.
 A single SQLite database in a Docker volume keeps the prototype local-first
 and auditable. Three tables:
 
-- `conversations(id, conversation_id, role, content, risk_level, created_at)`
-  — the linear message log. `risk_level='human-reviewer'` marks messages
-  injected by the human reviewer.
-- `escalations(id, conversation_id, risk_level, source, matched_signals,
-  user_message, bot_response, acknowledged, acknowledged_by, acknowledged_at,
-  notes, created_at)` — the review queue.
-- `conversation_state(conversation_id PK, state, changed_at, changed_by)` —
-  per-conversation `bot` / `human` flag for the takeover feature.
+```mermaid
+erDiagram
+    conversations {
+        int id PK
+        text conversation_id "client UUID"
+        text role "user / assistant"
+        text content
+        text risk_level "none/low/medium/high/human-reviewer"
+        timestamp created_at
+    }
+    escalations {
+        int id PK
+        text conversation_id FK
+        text risk_level
+        text source "input/ml-classifier/llm-judge/pattern/output/divergence/*-while-paused"
+        text matched_signals "JSON: regex matches, ML scores, judge reason"
+        text user_message
+        text bot_response "nullable; logged before reply if needed"
+        int acknowledged
+        text acknowledged_by
+        timestamp acknowledged_at
+        text notes
+        timestamp created_at
+    }
+    conversation_state {
+        text conversation_id PK
+        text state "bot / human"
+        timestamp changed_at
+        text changed_by
+    }
+    conversations ||--o{ escalations : "logs concern signals"
+    conversations ||--|| conversation_state : "0..1 takeover record"
+```
+
+- `conversations` — the linear message log. `risk_level='human-reviewer'`
+  marks messages injected by the human reviewer.
+- `escalations` — the review queue.
+- `conversation_state` — per-conversation `bot` / `human` flag for the
+  takeover feature.
 
 The `source` column on `escalations` distinguishes which layer of the
 pipeline fired the alert:

@@ -1,104 +1,143 @@
 # AI usage disclosure
 
-> ⚠️ Draft — please edit in your own voice before submission.
+> ⚠️ Draft — please edit in your own voice before submission. The
+> syllabus disclosure spec (tools / how / key prompts) is below, plus
+> a reflection on what I decided vs. what AI implemented.
 
-I built this project for DSCI 305 with significant help from Claude
-(Anthropic's AI assistant), used through the Claude Code CLI. This
-document is meant to be honest about what AI did, what I did, and how
-the collaboration worked. The course rubric requires disclosure, and
-pretending otherwise would defeat the point of an ethics class.
+This document follows the DSCI 305 syllabus's AI Policy:
 
-## What AI did
+> **Disclosure Requirements.** When using AI tools (ChatGPT, Claude,
+> Gemini, etc.), you must disclose: (a) which tool(s) you used, (b)
+> how you used them (drafting, editing, coding, analysis, etc.), (c)
+> what prompts you used (include key prompts in appendix or
+> footnotes). AI-generated content should be clearly marked and
+> attributed. You remain responsible for accuracy, quality, and
+> ethical compliance of all submitted work.
 
-Most of the code was AI-implemented from my design discussions. The
-agent typed faster than I could, and I directed it. In particular:
+## (a) Tools used
 
-- The FastAPI scaffolding, the SQLite schema, the front-end HTML and
-  CSS, the Docker setup. I read every file and adjusted things I
-  disagreed with, but the boilerplate is AI-generated.
-- The regex patterns in `app/guardrail.py`. I gave examples of distress
-  phrases I wanted caught; the agent wrote regex that covers them. I
-  added or rejected patterns when smoke testing turned up gaps or
-  false positives.
-- The Hugging Face emotion classifier integration and the LLM-judge
-  tier (`app/ml_classifier.py`, `app/llm_judge.py`). I picked the
-  model after reading the model card and the cap design (LLM-judge
-  stops at MEDIUM, ML at LOW); the agent wired up the inference path.
-- Tests in `tests/test_guardrail.py`. I gave examples of what to
-  assert; the agent wrote them. I reviewed every assertion.
-- Initial drafts of every doc under `docs/`. I outlined what each one
-  should cover, the agent drafted, and I edited.
+- **Claude (Anthropic)** via the **Claude Code** CLI agent (model:
+  Claude Opus 4.7 with 1M-token context). All AI assistance on this
+  project came from this one tool. No ChatGPT, Gemini, Copilot, or
+  other.
+- The Claude Code agent has filesystem and shell access to the local
+  repo, which means it can read code, run tests, run Docker, run
+  Playwright smoke tests, and issue git commands. I supervised every
+  state-changing action; no autonomous merges or pushes happened
+  without my OK.
+- Underlying language models the *project itself* uses (separate from
+  the AI assistance):
+  - **OpenRouter** as the LLM provider for the chat reply and the
+    third-tier LLM-judge. Default model is
+    `nvidia/nemotron-nano-9b-v2:free`.
+  - **`SamLowe/roberta-base-go_emotions`** (pretrained Hugging Face
+    classifier) as the second tier of the guardrail.
+  These are documented in `README.md` and `docs/architecture.md`.
 
-## What I decided
+## (b) How I used them
 
-The design choices are mine, even when the agent's suggestions shaped
-them:
+| Activity | AI's role | My role |
+|---|---|---|
+| **Code generation** | Wrote the FastAPI scaffolding, SQLite schema, regex patterns, classifier integration, LLM-judge integration, HTML/CSS, Docker setup, tests. | Designed the architecture and tier structure; reviewed every file; edited where I disagreed; ran the smoke tests; chose the cap design (ML at LOW, judge at MEDIUM). |
+| **Debugging** | Diagnosed and fixed bugs I surfaced from real use (duplicate user bubble, leading whitespace in stream, mid-stream-disconnect signal loss, judge max-tokens issue with reasoning models). | Found the bugs by actually using the chat. Described the symptoms; verified the fixes. |
+| **Drafting documentation** | Wrote initial drafts of `docs/architecture.md`, `docs/ethics-mapping.md`, `docs/threat-model.md`, `docs/user-guide.md`, and the structure of this disclosure. | Outlined what each doc should cover; reviewed and edited; rewrote prose-heavy sections in my own voice; rewrote `docs/written-component.md` (the required deliverable) directly. |
+| **Editing assistance** | Tightened sentences, hit word-count budgets, removed AI-tell phrasing on request. | Decided what to keep and what to cut. |
+| **Code annotation** | Added comments where I asked. | Read and trimmed where the comments were obvious. |
+| **Analysis** | Helped me reason through which framework (NIST vs. EU AI Act) and which second-tier (HF model vs. LLM-judge) fit best for the rubric, by listing tradeoffs. | Made the calls. The tradeoff tables are AI-summarized but my conclusions. |
+| **Smoke testing** | Wrote Playwright test scripts under `/tmp/smoke_*.py`, ran them in a real browser against the running container, surfaced failing assertions. | Specified what to test for each feature; reviewed the failures. |
+| **Git operations** | Drafted commit messages; performed force-push for history rewrite (after my explicit go-ahead). | Approved every commit and every push. |
 
-- Picking the NIST AI Risk Management Framework over the EU AI Act.
-  I read both and decided NIST's four-function structure (Govern, Map,
-  Measure, Manage) mapped more cleanly onto a layered guardrail.
-- The peer-like-support framing — don't push 988 on every distress
-  signal, only when it's clinically warranted. This came from
-  frustration with chatbots that over-escalate, and from class
-  discussions about dismissive moderation.
-- The hybrid takeover model: reviewer messages render as
-  bot-shaped bubbles with a small italic attribution, instead of full
-  impersonation (covert) or a loud distinct color (jarring). I
-  rejected each extreme for ethical reasons during the design
-  conversation.
-- Using a regex first tier instead of going pure-ML. Regex is
-  auditable; an opaque classifier as the only line of defense felt
-  wrong for a project literally about transparency.
-- Adding the LLM-judge tier even though it adds latency. The
-  euphemism gap I hit in real testing convinced me the trade-off was
-  worth it.
+## (c) Key prompts
 
-## What I caught by actually using it
+Representative prompts from the project's working sessions, in
+roughly chronological order. These are paraphrased rather than
+verbatim — Claude Code retains conversation history but I'm
+listing the load-bearing instructions:
 
-A lot of iteration was driven by me poking at the chat:
+1. *"I want to implement a guardrail system for suicide prevention
+   when a user is chatting with an AI bot... using NIST AI RMF as
+   the framework, with notification to admin and crisis-line
+   redirection. Use Docker Compose for local deployment."* — initial
+   project framing; produced the FastAPI scaffold + regex tier +
+   admin queue.
+2. *"Stop pushing 988 on every distress signal. Re-frame as
+   peer-like support that scales resource intensity with the
+   guardrail signal."* — design pivot away from
+   escalate-and-stop. Drove the system-prompt redesign.
+3. *"Add a divergence detector — if the regex says NONE but the bot
+   mentioned 988, log it for the admin to audit model drift."* —
+   produced the `divergence` source value.
+4. *"Add multi-turn risk aggregation — three consecutive non-NONE
+   user messages should elevate to MEDIUM."* — produced
+   `assess_pattern`.
+5. *"Add a takeover feature: pause the bot, let the reviewer chat as
+   a human, but keep the handoff visible to the user."* — produced
+   `conversation_state` + the hybrid attribution model.
+6. *"The chat shows the user's message twice and the bot reply
+   starts with a blank line."* — surfaced two real bugs; drove the
+   `user_saved`/`assistant_saved` SSE events and the leading-whitespace
+   trim.
+7. *"For the second tier, would HF or LLM-judge align better with
+   the rubric?"* — produced the comparative analysis that led me
+   to wire HF first, then LLM-judge as the third tier when I saw
+   euphemistic ideation slipping past both.
+8. *"Rewrite the docs in a more direct human-sounding voice; add an
+   AI usage disclosure."* — drove the prose pass that produced this
+   document.
+9. *"Convert the ASCII architecture diagrams to Mermaid for GitHub
+   rendering."* — produced the Mermaid blocks now in `README.md`
+   and `docs/architecture.md`.
 
-- I sent "I hate school" and noticed the bot pushed 988. That triggered
-  the original peer-support redesign.
-- I walked through the homework-failure scenario in chat and noticed
-  nothing flagged for admin even though the bot was reading the
-  conversation as a crisis. That exposed both the regex gap
-  (`"end all of this"` wasn't in the patterns) and the ML gap
-  (`go_emotions` reads euphemistic ideation as `desire`, which we
-  exclude from the distress label set). The fixes were mine to
-  direct.
-- I noticed user messages were rendering twice in the chat UI and
-  traced it to the polling loop racing the optimistic bubble. The
-  agent implemented the fix after I described the symptom.
-- The conversation-state race during takeover, the leading whitespace
-  on streamed replies — both surfaced from my real use, not from
-  AI-driven testing.
+The full conversation history lives in Claude Code's session log; I
+can produce the verbatim prompt list on request.
 
-## What I reviewed and edited
+## What I decided vs. what AI implemented
 
-- Every commit before pushing.
-- Every doc in this repo. The structure is mostly the agent's, but I
-  rewrote sections in my own voice for the deliverable
-  (`docs/written-component.md`) and trimmed AI-tell phrasing
-  elsewhere.
-- The chat LLM's system prompt (`app/llm.py`). I read every line and
-  adjusted the per-tier guidance after testing how the bot actually
-  behaved.
-- The threat model. The threats came from real concerns I raised in
-  conversation; the agent's contribution was structuring them.
+The design choices are mine, even when the agent's suggestions
+shaped them:
+
+- Picking NIST AI RMF over the EU AI Act — read both, NIST mapped
+  cleaner.
+- Peer-like support framing — from frustration with chatbots that
+  over-escalate, plus class discussion.
+- The hybrid takeover model — rejected fully covert and loud
+  distinct-color extremes during the design conversation.
+- Regex first tier — auditable; an opaque ML/LLM as the only line
+  of defense felt wrong for an ethics-class project.
+- Adding the LLM-judge tier despite latency — the euphemism gap I
+  hit in real testing convinced me.
+- Caps on each tier (ML at LOW, judge at MEDIUM) — rejecting the
+  scientism failure mode the course materials flag.
+
+## Real-use bug catches
+
+A lot of the iteration came from me poking at the chat:
+
+- `"I hate school"` → bot pushed 988 → triggered the original
+  peer-support redesign.
+- The homework-failure roleplay → exposed both the regex gap
+  (`"end all of this"` not in patterns) and the ML gap
+  (`go_emotions` reads euphemism as `desire`). The fixes were mine
+  to direct.
+- Duplicate user bubbles + leading whitespace in streamed replies →
+  found by use, not by tests.
+- The mid-stream-disconnect signal loss → noticed because the
+  Playwright smoke test wasn't logging escalations the agent
+  expected.
 
 ## What I'm not claiming
 
-- I didn't train any model. The Hugging Face classifier is pretrained;
-  I picked it and tuned the threshold.
-- I'm not claiming clinical validity. The detector stack gets patched
-  iteratively as I find gaps. I don't pretend it's safe to deploy.
+- I didn't train any model. The HF classifier is pretrained.
+- I'm not claiming clinical validity. The detector stack is patched
+  iteratively; I don't pretend it's safe to deploy.
 - I'm not the author of every line of code or prose. I'm the author
-  of every decision about what got built and what shipped, and of the
-  written component and this disclosure.
+  of every decision about what got built and shipped, of the
+  written component (`docs/written-component.md`), and of this
+  disclosure.
 
 The course rubric says "AI should assist, but you must write the
 content." For the written component and this disclosure, I wrote
-directly. For most other artifacts, I directed AI implementation and
-reviewed the output the way I'd review a junior collaborator's pull
-request — accepting most of it, pushing back where I disagreed,
-testing what I was unsure about.
+directly. For most other artifacts, I directed AI implementation
+and reviewed the output the way I'd review a junior collaborator's
+pull request — accepting most of it, pushing back where I
+disagreed, testing what I was unsure about.

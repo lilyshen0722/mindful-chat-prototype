@@ -56,32 +56,42 @@ false-negative modes, documented in `docs/ethics-mapping.md`
 
 ## Architecture
 
-```
-┌──────────┐    ┌──────────────────────────────────────────────────────────┐
-│ chat UI  │───▶│ FastAPI                                                   │
-│ (HTML/JS)│◀───│  ├── /api/chat (SSE)                                      │
-│ + sidebar│    │  │   1. regex assess + (if NONE) ML + (if NONE) LLM-judge│
-│ + polling│    │  │   1b. multi-turn pattern assess on recent user msgs   │
-│          │    │  │   2. if state=human → bypass LLM, send paused notice  │
-│          │    │  │   3. else → call OpenRouter with risk-aware prompt    │
-│          │    │  │   4. outbound assess; replace unsafe replies          │
-│          │    │  │   5. log: input/ml-classifier/llm-judge/pattern/      │
-│          │    │  │           output/divergence rows                       │
-│          │    │  ├── /api/conversation/{cid}/messages, /state            │
-│          │    │  ├── /api/conversations/preview (sidebar)                │
-│          │    │  ├── /admin + /admin/conversations/{cid} (HTTP Basic)    │
-│          │    │  └── /api/admin/conversations/{cid}/{pause|resume|message}│
-│          │    └──────────────────────────────────────────────────────────┘
-│          │                  │
-│          │                  ▼
-│          │   SQLite: conversations, escalations, conversation_state
-│          │
-│          │   The chat UI polls every 4s for new reviewer messages and
-│          │   conversation state, so a paused conversation surfaces a
-└──────────┘   "human reviewer engaged" badge to the user.
+```mermaid
+flowchart LR
+    User[("User<br/>browser")]
+    Reviewer(["Reviewer"])
+
+    subgraph Pipeline["Detector pipeline (per turn)"]
+        direction TB
+        R["regex"] -->|NONE| ML["ML classifier<br/>go_emotions"]
+        ML -->|NONE| J["LLM judge"]
+        R --> P["pattern aggregator<br/>(3-msg window)"]
+        ML --> P
+        J --> P
+    end
+
+    User -->|POST /api/chat| Pipeline
+    Pipeline --> LLM["chat LLM<br/>(OpenRouter)"]
+    LLM --> Out["outbound regex check"]
+    Out -->|"unsafe → safe template"| User
+    Out -->|"safe"| User
+
+    Pipeline --> DB[("SQLite<br/>conversations<br/>escalations<br/>conversation_state")]
+
+    DB --> Admin["/admin dashboard<br/>+ chat-style review"]
+    Reviewer --> Admin
+    Admin -->|pause / send msg| User
+
+    classDef tier fill:#eef4ff,stroke:#3b6cd1,color:#1d3a78
+    classDef store fill:#f4f2eb,stroke:#6b6b6b
+    class R,ML,J,P,Out tier
+    class DB store
 ```
 
-See `docs/architecture.md` for a more detailed walkthrough.
+The chat UI polls every 4 seconds for new reviewer messages and
+conversation state, so a paused conversation surfaces a "human
+reviewer engaged" badge to the user. See `docs/architecture.md` for
+the detailed dataflow + storage ER diagram.
 
 ## Screenshots
 
